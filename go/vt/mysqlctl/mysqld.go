@@ -141,8 +141,8 @@ func (mysqld *Mysqld) RunMysqlUpgrade() error {
 		log.Warningf("VT_MYSQL_ROOT not set, skipping mysql_upgrade step: %v", err)
 		return nil
 	}
-	name := path.Join(dir, "bin/mysql_upgrade")
-	if _, err := os.Stat(name); err != nil {
+	name, err := binaryPath(dir, "mysql_upgrade")
+	if err != nil {
 		log.Warningf("mysql_upgrade binary not present, skipping it: %v", err)
 		return nil
 	}
@@ -169,7 +169,7 @@ func (mysqld *Mysqld) RunMysqlUpgrade() error {
 // Start will start the mysql daemon, either by running the 'mysqld_start'
 // hook, or by running mysqld_safe in the background.
 // If a mysqlctld address is provided in a flag, Start will run remotely.
-func (mysqld *Mysqld) Start(ctx context.Context) error {
+func (mysqld *Mysqld) Start(ctx context.Context, mysqldArgs ...string) error {
 	// Execute as remote action on mysqlctld if requested.
 	if *socketFile != "" {
 		log.Infof("executing Mysqld.Start() remotely via mysqlctld server: %v", *socketFile)
@@ -178,14 +178,14 @@ func (mysqld *Mysqld) Start(ctx context.Context) error {
 			return fmt.Errorf("can't dial mysqlctld: %v", err)
 		}
 		defer client.Close()
-		return client.Start(ctx)
+		return client.Start(ctx, mysqldArgs...)
 	}
 
 	var name string
 	ts := fmt.Sprintf("Mysqld.Start(%v)", time.Now().Unix())
 
 	// try the mysqld start hook, if any
-	switch hr := hook.NewSimpleHook("mysqld_start").Execute(); hr.ExitStatus {
+	switch hr := hook.NewHook("mysqld_start", mysqldArgs).Execute(); hr.ExitStatus {
 	case hook.HOOK_SUCCESS:
 		// hook exists and worked, we can keep going
 		name = "mysqld_start hook"
@@ -196,9 +196,13 @@ func (mysqld *Mysqld) Start(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		name = path.Join(dir, "bin/mysqld_safe")
+		name, err = binaryPath(dir, "mysqld_safe")
+		if err != nil {
+			return err
+		}
 		arg := []string{
 			"--defaults-file=" + mysqld.config.path}
+		arg = append(arg, mysqldArgs...)
 		env := []string{os.ExpandEnv("LD_LIBRARY_PATH=$VT_MYSQL_ROOT/lib/mysql")}
 
 		cmd := exec.Command(name, arg...)
@@ -339,7 +343,10 @@ func (mysqld *Mysqld) Shutdown(ctx context.Context, waitForMysqld bool) error {
 		if err != nil {
 			return err
 		}
-		name := path.Join(dir, "bin/mysqladmin")
+		name, err := binaryPath(dir, "mysqladmin")
+		if err != nil {
+			return err
+		}
 		arg := []string{
 			"-u", mysqld.dba.Uname, "-S", mysqld.config.SocketFile,
 			"shutdown"}
@@ -395,10 +402,25 @@ func execCmd(name string, args, env []string, dir string, input io.Reader) (cmd 
 	out, err := cmd.CombinedOutput()
 	output = string(out)
 	if err != nil {
-		err = errors.New(name + ": " + output)
+		log.Infof("execCmd: %v failed: %v", name, err)
+		err = fmt.Errorf("%v: %v, output: %v", name, err, output)
 	}
-	log.Infof("execCmd: command returned: %v", output)
+	log.Infof("execCmd: %v output: %v", name, output)
 	return cmd, output, err
+}
+
+// binaryPath does a limited path lookup for a command,
+// searching only within sbin and bin in the given root.
+func binaryPath(root, binary string) (string, error) {
+	subdirs := []string{"sbin", "bin"}
+	for _, subdir := range subdirs {
+		binPath := path.Join(root, subdir, binary)
+		if _, err := os.Stat(binPath); err == nil {
+			return binPath, nil
+		}
+	}
+	return "", fmt.Errorf("%s not found in any of %s/{%s}",
+		binary, root, strings.Join(subdirs, ","))
 }
 
 // Init will create the default directory structure for the mysqld process,
@@ -450,13 +472,15 @@ func (mysqld *Mysqld) Init(ctx context.Context, initDBSQLFile string) error {
 func (mysqld *Mysqld) installDataDir() error {
 	mysqlRoot, err := vtenv.VtMysqlRoot()
 	if err != nil {
-		log.Errorf("%v", err)
+		return err
+	}
+	mysqldPath, err := binaryPath(mysqlRoot, "mysqld")
+	if err != nil {
 		return err
 	}
 
 	// Check mysqld version.
-	_, version, err := execCmd(path.Join(mysqlRoot, "sbin/mysqld"),
-		[]string{"--version"}, nil, mysqlRoot, nil)
+	_, version, err := execCmd(mysqldPath, []string{"--version"}, nil, mysqlRoot, nil)
 	if err != nil {
 		return err
 	}
@@ -471,7 +495,7 @@ func (mysqld *Mysqld) installDataDir() error {
 			"--basedir=" + mysqlRoot,
 			"--initialize-insecure", // Use empty 'root'@'localhost' password.
 		}
-		if _, _, err = execCmd(path.Join(mysqlRoot, "sbin/mysqld"), args, nil, mysqlRoot, nil); err != nil {
+		if _, _, err = execCmd(mysqldPath, args, nil, mysqlRoot, nil); err != nil {
 			log.Errorf("mysqld --initialize-insecure failed: %v", err)
 			return err
 		}
@@ -483,7 +507,11 @@ func (mysqld *Mysqld) installDataDir() error {
 		"--defaults-file=" + mysqld.config.path,
 		"--basedir=" + mysqlRoot,
 	}
-	if _, _, err = execCmd(path.Join(mysqlRoot, "bin/mysql_install_db"), args, nil, mysqlRoot, nil); err != nil {
+	cmdPath, err := binaryPath(mysqlRoot, "mysql_install_db")
+	if err != nil {
+		return err
+	}
+	if _, _, err = execCmd(cmdPath, args, nil, mysqlRoot, nil); err != nil {
 		log.Errorf("mysql_install_db failed: %v", err)
 		return err
 	}
@@ -519,6 +547,34 @@ func (mysqld *Mysqld) initConfig(root string) error {
 	}
 
 	return ioutil.WriteFile(mysqld.config.path, []byte(configData), 0664)
+}
+
+// ReinitConfig updates the config file as if Mysqld is initializing. At the
+// moment it only randomizes ServerID because it's not safe to restore a replica
+// from a backup and then give it the same ServerID as before, MySQL can then
+// skip transactions in the replication stream with the same server_id.
+func (mysqld *Mysqld) ReinitConfig(ctx context.Context) error {
+	log.Infof("Mysqld.ReinitConfig")
+
+	// Execute as remote action on mysqlctld if requested.
+	if *socketFile != "" {
+		log.Infof("executing Mysqld.ReinitConfig() remotely via mysqlctld server: %v", *socketFile)
+		client, err := mysqlctlclient.New("unix", *socketFile)
+		if err != nil {
+			return fmt.Errorf("can't dial mysqlctld: %v", err)
+		}
+		defer client.Close()
+		return client.ReinitConfig(ctx)
+	}
+
+	if err := mysqld.config.RandomizeMysqlServerID(); err != nil {
+		return err
+	}
+	root, err := vtenv.VtRoot()
+	if err != nil {
+		return err
+	}
+	return mysqld.initConfig(root)
 }
 
 func (mysqld *Mysqld) createDirs() error {
@@ -627,7 +683,10 @@ func (mysqld *Mysqld) executeMysqlScript(user string, sql io.Reader) error {
 	if err != nil {
 		return err
 	}
-	name := path.Join(dir, "bin/mysql")
+	name, err := binaryPath(dir, "mysql")
+	if err != nil {
+		return err
+	}
 	arg := []string{"--batch", "-u", user, "-S", mysqld.config.SocketFile}
 	env := []string{
 		"LD_LIBRARY_PATH=" + path.Join(dir, "lib/mysql"),

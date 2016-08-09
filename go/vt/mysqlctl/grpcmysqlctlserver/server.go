@@ -24,7 +24,7 @@ type server struct {
 
 // Start implements the server side of the MysqlctlClient interface.
 func (s *server) Start(ctx context.Context, request *mysqlctlpb.StartRequest) (*mysqlctlpb.StartResponse, error) {
-	return &mysqlctlpb.StartResponse{}, s.mysqld.Start(ctx)
+	return &mysqlctlpb.StartResponse{}, s.mysqld.Start(ctx, request.MysqldArgs...)
 }
 
 // Shutdown implements the server side of the MysqlctlClient interface.
@@ -35,6 +35,11 @@ func (s *server) Shutdown(ctx context.Context, request *mysqlctlpb.ShutdownReque
 // RunMysqlUpgrade implements the server side of the MysqlctlClient interface.
 func (s *server) RunMysqlUpgrade(ctx context.Context, request *mysqlctlpb.RunMysqlUpgradeRequest) (*mysqlctlpb.RunMysqlUpgradeResponse, error) {
 	return &mysqlctlpb.RunMysqlUpgradeResponse{}, s.mysqld.RunMysqlUpgrade()
+}
+
+// ReinitConfig implements the server side of the MysqlctlClient interface.
+func (s *server) ReinitConfig(ctx context.Context, request *mysqlctlpb.ReinitConfigRequest) (*mysqlctlpb.ReinitConfigResponse, error) {
+	return &mysqlctlpb.ReinitConfigResponse{}, s.mysqld.ReinitConfig(ctx)
 }
 
 // StartServer registers the Server for RPCs.

@@ -16,43 +16,34 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"unicode"
 
 	"github.com/youtube/vitess/go/stats"
 )
 
 const (
-	filteredReplicationUnfriendlyComment = "/* vtgate:: filtered_replication_unfriendly */"
-	insertDML                            = "insert"
-	updateDML                            = "update"
-	deleteDML                            = "delete"
+	filteredReplicationUnfriendlyAnnotation = "/* vtgate:: filtered_replication_unfriendly */"
 )
 
 var (
-	filteredReplicationUnfriendlyCountStat = stats.NewInt("ReplicationUnfriendlyStatementsCount")
+	filteredReplicationUnfriendlyStatementsCount = stats.NewInt("FilteredReplicationUnfriendlyStatementsCount")
 )
 
-// AddIfDML annotates 'sql' based on
-// the keyspaceIDs found in 'keyspaceIDs':
+// AnnotateIfDML annotates 'sql' based on 'keyspaceIDs'
 //
 // If 'sql' is not a DML statement no annotation is added.
-// If 'sql' is a DML statement and contains exactly one element
-// it is used to annotate 'sql'; otherwise 'sql' is annotated
-// as replication-unfriendly.
-func AddIfDML(sql string, keyspaceIDs [][]byte) string {
+// If 'sql' is a DML statement and contains exactly one keyspaceID
+//    it is used to annotate 'sql'
+// Otherwise 'sql' is annotated as replication-unfriendly.
+func AnnotateIfDML(sql string, keyspaceIDs [][]byte) string {
+	if !IsDML(sql) {
+		return sql
+	}
 	if len(keyspaceIDs) == 1 {
-		return AddKeyspaceIDIfDML(sql, keyspaceIDs[0])
+		return AddKeyspaceID(sql, keyspaceIDs[0], "")
 	}
-	return AddFilteredReplicationUnfriendlyIfDML(sql)
-}
-
-// AddKeyspaceIDIfDML returns a copy of 'sql' annotated
-// with the given keyspace id if 'sql' is a DML statement;
-// otherwise, it returns a copy of 'sql'.
-func AddKeyspaceIDIfDML(sql string, keyspaceID []byte) string {
-	if isDml(sql) {
-		return AddKeyspaceID(sql, keyspaceID, "")
-	}
-	return sql
+	filteredReplicationUnfriendlyStatementsCount.Add(1)
+	return sql + filteredReplicationUnfriendlyAnnotation
 }
 
 // AddKeyspaceID returns a copy of 'sql' annotated
@@ -63,39 +54,17 @@ func AddKeyspaceID(sql string, keyspaceID []byte, trailingComments string) strin
 		sql, hex.EncodeToString(keyspaceID), trailingComments)
 }
 
-// AddFilteredReplicationUnfriendlyIfDML annotates the given 'sql'
-// query as filtered-replication-unfriendly if its a DML statement
-// (filtered-replication should halt if it encounters such an annotation).
-// Does nothing if the statement is not a DML statement.
-func AddFilteredReplicationUnfriendlyIfDML(sql string) string {
-	if isDml(sql) {
-		return AddFilteredReplicationUnfriendly(sql)
+// IsDML returns true if 'querySQL' is an INSERT, UPDATE or DELETE statement.
+func IsDML(sql string) bool {
+	sql = strings.TrimLeftFunc(sql, unicode.IsSpace)
+	end := strings.IndexFunc(sql, unicode.IsSpace)
+	if end == -1 {
+		return false
 	}
-	return sql
-}
-
-// AddFilteredReplicationUnfriendly annotates the given 'sql'
-// query as filtered-replication-unfriendly.
-func AddFilteredReplicationUnfriendly(sql string) string {
-	filteredReplicationUnfriendlyCountStat.Add(1)
-	return sql + filteredReplicationUnfriendlyComment
-}
-
-// Copied from go/vt/vtgate/resolver.go
-// TODO(erez): Refactor this.
-
-// Returns true if 'querySQL' is an INSERT, UPDATE or DELETE
-// statement.
-func isDml(querySQL string) bool {
-	var sqlKW string
-	if i := strings.Index(querySQL, " "); i >= 0 {
-		sqlKW = querySQL[:i]
-	}
-	sqlKW = strings.ToLower(sqlKW)
-	if sqlKW == insertDML || sqlKW == updateDML || sqlKW == deleteDML {
-		return true
-	}
-	return false
+	word := sql[:end]
+	return strings.EqualFold(word, "insert") ||
+		strings.EqualFold(word, "update") ||
+		strings.EqualFold(word, "delete")
 }
 
 // ExtractKeySpaceID parses the annotation of the given statement and tries
@@ -106,7 +75,7 @@ func isDml(querySQL string) bool {
 // error value.
 func ExtractKeySpaceID(sql string) (keyspaceID []byte, err error) {
 	keyspaceIDString, hasKeySpaceID := extractStringBetween(sql, "/* vtgate:: keyspace_id:", " ")
-	hasUnfriendlyAnnotation := (strings.Index(sql, filteredReplicationUnfriendlyComment) != -1)
+	hasUnfriendlyAnnotation := (strings.Index(sql, filteredReplicationUnfriendlyAnnotation) != -1)
 	err = nil
 	if hasKeySpaceID {
 		if hasUnfriendlyAnnotation {

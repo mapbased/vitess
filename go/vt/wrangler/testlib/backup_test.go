@@ -38,9 +38,10 @@ func TestBackupRestore(t *testing.T) {
 
 	// Set up mock query results.
 	db.AddQuery("CREATE DATABASE IF NOT EXISTS _vt", &sqltypes.Result{})
-	db.AddQuery("DROP TABLE IF EXISTS _vt.local_metadata", &sqltypes.Result{})
+	db.AddQuery("BEGIN", &sqltypes.Result{})
+	db.AddQuery("COMMIT", &sqltypes.Result{})
 	db.AddQueryPattern(`SET @@session\.sql_log_bin = .*`, &sqltypes.Result{})
-	db.AddQueryPattern(`CREATE TABLE _vt\.local_metadata .*`, &sqltypes.Result{})
+	db.AddQueryPattern(`CREATE TABLE IF NOT EXISTS _vt\.local_metadata .*`, &sqltypes.Result{})
 	db.AddQueryPattern(`INSERT INTO _vt\.local_metadata .*`, &sqltypes.Result{})
 
 	// Initialize our temp dirs
@@ -153,8 +154,8 @@ func TestBackupRestore(t *testing.T) {
 	destTablet.StartActionLoop(t, wr)
 	defer destTablet.StopActionLoop(t)
 
-	if err := destTablet.Agent.RestoreFromBackup(ctx); err != nil {
-		t.Fatalf("RestoreFromBackup failed: %v", err)
+	if err := destTablet.Agent.RestoreData(ctx, logutil.NewConsoleLogger(), false /* deleteBeforeRestore */); err != nil {
+		t.Fatalf("RestoreData failed: %v", err)
 	}
 
 	// verify the full status

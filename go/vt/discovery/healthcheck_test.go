@@ -1,13 +1,16 @@
 package discovery
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"html/template"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/youtube/vitess/go/sqltypes"
+	"github.com/youtube/vitess/go/vt/status"
 	"github.com/youtube/vitess/go/vt/tabletserver/querytypes"
 	"github.com/youtube/vitess/go/vt/tabletserver/tabletconn"
 	"github.com/youtube/vitess/go/vt/topo"
@@ -33,15 +36,9 @@ func TestHealthCheck(t *testing.T) {
 	t.Logf(`createFakeConn({Host: "a", PortMap: {"vt": 1}}, c)`)
 	l := newListener()
 	hc := NewHealthCheck(1*time.Millisecond, 1*time.Millisecond, time.Hour).(*HealthCheckImpl)
-	hc.SetListener(l)
-	hc.AddTablet("cell", "", tablet)
-	t.Logf(`hc = HealthCheck(); hc.AddTablet("cell", "", {Host: "a", PortMap: {"vt": 1}})`)
-
-	// no tablet before getting first StreamHealthResponse
-	tsList := hc.GetTabletStatsFromKeyspaceShard("k", "s")
-	if len(tsList) != 0 {
-		t.Errorf(`hc.GetTabletStatsFromKeyspaceShard("k", "s") = %+v; want empty`, tsList)
-	}
+	hc.SetListener(l, true)
+	hc.AddTablet(tablet, "")
+	t.Logf(`hc = HealthCheck(); hc.AddTablet({Host: "a", PortMap: {"vt": 1}}, "")`)
 
 	// one tablet after receiving a StreamHealthResponse
 	shr := &querypb.StreamHealthResponse{
@@ -51,6 +48,7 @@ func TestHealthCheck(t *testing.T) {
 		RealtimeStats:                       &querypb.RealtimeStats{SecondsBehindMaster: 1, CpuUsage: 0.2},
 	}
 	want := &TabletStats{
+		Key:     "a,vt:1",
 		Tablet:  tablet,
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_MASTER},
 		Up:      true,
@@ -64,15 +62,12 @@ func TestHealthCheck(t *testing.T) {
 	if !reflect.DeepEqual(res, want) {
 		t.Errorf(`<-l.output: %+v; want %+v`, res, want)
 	}
-	tsList = hc.GetTabletStatsFromKeyspaceShard("k", "s")
-	if len(tsList) != 1 || !reflect.DeepEqual(tsList[0], want) {
-		t.Errorf(`hc.GetTabletStatsFromKeyspaceShard("k", "s") = %+v; want %+v`, tsList, want)
-	}
 	tcsl := hc.CacheStatus()
 	tcslWant := TabletsCacheStatusList{{
 		Cell:   "cell",
 		Target: &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_MASTER},
 		TabletsStats: TabletStatsList{{
+			Key:     "a,vt:1",
 			Tablet:  tablet,
 			Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_MASTER},
 			Up:      true,
@@ -85,14 +80,30 @@ func TestHealthCheck(t *testing.T) {
 		t.Errorf(`hc.CacheStatus() = %+v; want %+v`, tcsl, tcslWant)
 	}
 
-	// TabletType changed
+	// TabletType changed, should get both old and new event
 	shr = &querypb.StreamHealthResponse{
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_REPLICA},
 		Serving: true,
 		TabletExternallyReparentedTimestamp: 0,
 		RealtimeStats:                       &querypb.RealtimeStats{SecondsBehindMaster: 1, CpuUsage: 0.5},
 	}
+	input <- shr
+	t.Logf(`input <- {{Keyspace: "k", Shard: "s", TabletType: REPLICA}, Serving: true, TabletExternallyReparentedTimestamp: 0, {SecondsBehindMaster: 1, CpuUsage: 0.5}}`)
 	want = &TabletStats{
+		Key:     "a,vt:1",
+		Tablet:  tablet,
+		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_MASTER},
+		Up:      false,
+		Serving: true,
+		Stats:   &querypb.RealtimeStats{SecondsBehindMaster: 1, CpuUsage: 0.2},
+		TabletExternallyReparentedTimestamp: 10,
+	}
+	res = <-l.output
+	if !reflect.DeepEqual(res, want) {
+		t.Errorf(`<-l.output: %+v; want %+v`, res, want)
+	}
+	want = &TabletStats{
+		Key:     "a,vt:1",
 		Tablet:  tablet,
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_REPLICA},
 		Up:      true,
@@ -100,15 +111,9 @@ func TestHealthCheck(t *testing.T) {
 		Stats:   &querypb.RealtimeStats{SecondsBehindMaster: 1, CpuUsage: 0.5},
 		TabletExternallyReparentedTimestamp: 0,
 	}
-	input <- shr
-	t.Logf(`input <- {{Keyspace: "k", Shard: "s", TabletType: REPLICA}, Serving: true, TabletExternallyReparentedTimestamp: 0, {SecondsBehindMaster: 1, CpuUsage: 0.5}}`)
 	res = <-l.output
 	if !reflect.DeepEqual(res, want) {
 		t.Errorf(`<-l.output: %+v; want %+v`, res, want)
-	}
-	tsList = hc.GetTabletStatsFromTarget("k", "s", topodatapb.TabletType_REPLICA)
-	if len(tsList) != 1 || !reflect.DeepEqual(tsList[0], want) {
-		t.Errorf(`hc.GetTabletStatsFromTarget("k", "s", REPLICA) = %+v; want %+v`, tsList, want)
 	}
 
 	// Serving & RealtimeStats changed
@@ -119,6 +124,7 @@ func TestHealthCheck(t *testing.T) {
 		RealtimeStats:                       &querypb.RealtimeStats{SecondsBehindMaster: 1, CpuUsage: 0.3},
 	}
 	want = &TabletStats{
+		Key:     "a,vt:1",
 		Tablet:  tablet,
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_REPLICA},
 		Up:      true,
@@ -141,6 +147,7 @@ func TestHealthCheck(t *testing.T) {
 		RealtimeStats:                       &querypb.RealtimeStats{HealthError: "some error", SecondsBehindMaster: 1, CpuUsage: 0.3},
 	}
 	want = &TabletStats{
+		Key:     "a,vt:1",
 		Tablet:  tablet,
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_REPLICA},
 		Up:      true,
@@ -160,6 +167,7 @@ func TestHealthCheck(t *testing.T) {
 	hc.deleteConn(tablet)
 	t.Logf(`hc.RemoveTablet({Host: "a", PortMap: {"vt": 1}})`)
 	want = &TabletStats{
+		Key:     "a,vt:1",
 		Tablet:  tablet,
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_REPLICA},
 		Up:      false,
@@ -172,10 +180,7 @@ func TestHealthCheck(t *testing.T) {
 	if !reflect.DeepEqual(res, want) {
 		t.Errorf(`<-l.output: %+v; want %+v`, res, want)
 	}
-	tsList = hc.GetTabletStatsFromKeyspaceShard("k", "s")
-	if len(tsList) != 0 {
-		t.Errorf(`hc.GetTabletStatsFromKeyspaceShard("k", "s") = %+v; want empty`, tsList)
-	}
+
 	// close healthcheck
 	hc.Close()
 }
@@ -192,9 +197,9 @@ func TestHealthCheckCloseWaitsForGoRoutines(t *testing.T) {
 
 	l := newListener()
 	hc := NewHealthCheck(1*time.Millisecond, 1*time.Millisecond, time.Hour).(*HealthCheckImpl)
-	hc.SetListener(l)
-	hc.AddTablet("cell", "", tablet)
-	t.Logf(`hc = HealthCheck(); hc.AddTablet("cell", "", {Host: "a", PortMap: {"vt": 1}})`)
+	hc.SetListener(l, false)
+	hc.AddTablet(tablet, "")
+	t.Logf(`hc = HealthCheck(); hc.AddTablet({Host: "a", PortMap: {"vt": 1}}, "")`)
 
 	// Verify that the listener works in general.
 	shr := &querypb.StreamHealthResponse{
@@ -204,6 +209,7 @@ func TestHealthCheckCloseWaitsForGoRoutines(t *testing.T) {
 		RealtimeStats:                       &querypb.RealtimeStats{SecondsBehindMaster: 1, CpuUsage: 0.2},
 	}
 	want := &TabletStats{
+		Key:     "a,vt:1",
 		Tablet:  tablet,
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_MASTER},
 		Up:      true,
@@ -261,9 +267,9 @@ func TestHealthCheckTimeout(t *testing.T) {
 	t.Logf(`createFakeConn({Host: "a", PortMap: {"vt": 1}}, c)`)
 	l := newListener()
 	hc := NewHealthCheck(1*time.Millisecond, 1*time.Millisecond, timeout).(*HealthCheckImpl)
-	hc.SetListener(l)
-	hc.AddTablet("cell", "", tablet)
-	t.Logf(`hc = HealthCheck(); hc.AddTablet("cell", "", {Host: "a", PortMap: {"vt": 1}})`)
+	hc.SetListener(l, false)
+	hc.AddTablet(tablet, "")
+	t.Logf(`hc = HealthCheck(); hc.AddTablet({Host: "a", PortMap: {"vt": 1}}, "")`)
 
 	// one tablet after receiving a StreamHealthResponse
 	shr := &querypb.StreamHealthResponse{
@@ -273,6 +279,7 @@ func TestHealthCheckTimeout(t *testing.T) {
 		RealtimeStats:                       &querypb.RealtimeStats{SecondsBehindMaster: 1, CpuUsage: 0.2},
 	}
 	want := &TabletStats{
+		Key:     "a,vt:1",
 		Tablet:  tablet,
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_MASTER},
 		Up:      true,
@@ -286,10 +293,7 @@ func TestHealthCheckTimeout(t *testing.T) {
 	if !reflect.DeepEqual(res, want) {
 		t.Errorf(`<-l.output: %+v; want %+v`, res, want)
 	}
-	tsList := hc.GetTabletStatsFromKeyspaceShard("k", "s")
-	if len(tsList) != 1 || !reflect.DeepEqual(tsList[0], want) {
-		t.Errorf(`hc.GetTabletStatsFromKeyspaceShard("k", "s") = %+v; want %+v`, tsList, want)
-	}
+
 	// wait for timeout period
 	time.Sleep(2 * timeout)
 	t.Logf(`Sleep(2 * timeout)`)
@@ -297,10 +301,7 @@ func TestHealthCheckTimeout(t *testing.T) {
 	if res.Serving {
 		t.Errorf(`<-l.output: %+v; want not serving`, res)
 	}
-	tsList = hc.GetTabletStatsFromKeyspaceShard("k", "s")
-	if len(tsList) != 1 || tsList[0].Serving {
-		t.Errorf(`hc.GetTabletStatsFromKeyspaceShard("k", "s") = %+v; want not serving`, tsList)
-	}
+
 	// send a healthcheck response, it should be serving again
 	input <- shr
 	t.Logf(`input <- {{Keyspace: "k", Shard: "s", TabletType: MASTER}, Serving: true, TabletExternallyReparentedTimestamp: 10, {SecondsBehindMaster: 1, CpuUsage: 0.2}}`)
@@ -308,12 +309,38 @@ func TestHealthCheckTimeout(t *testing.T) {
 	if !reflect.DeepEqual(res, want) {
 		t.Errorf(`<-l.output: %+v; want %+v`, res, want)
 	}
-	tsList = hc.GetTabletStatsFromKeyspaceShard("k", "s")
-	if len(tsList) != 1 || !reflect.DeepEqual(tsList[0], want) {
-		t.Errorf(`hc.GetTabletStatsFromKeyspaceShard("k", "s") = %+v; want %+v`, tsList, want)
-	}
+
 	// close healthcheck
 	hc.Close()
+}
+
+func TestTemplate(t *testing.T) {
+	tablet := topo.NewTablet(0, "cell", "a")
+	ts := []*TabletStats{
+		{
+			Key:     "a",
+			Tablet:  tablet,
+			Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_REPLICA},
+			Up:      true,
+			Serving: false,
+			Stats:   &querypb.RealtimeStats{SecondsBehindMaster: 1, CpuUsage: 0.3},
+			TabletExternallyReparentedTimestamp: 0,
+		},
+	}
+	tcs := &TabletsCacheStatus{
+		Cell:         "cell",
+		Target:       &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_REPLICA},
+		TabletsStats: ts,
+	}
+	templ := template.New("").Funcs(status.StatusFuncs)
+	templ, err := templ.Parse(HealthCheckTemplate)
+	if err != nil {
+		t.Fatalf("error parsing template: %v", err)
+	}
+	wr := &bytes.Buffer{}
+	if err := templ.Execute(wr, []*TabletsCacheStatus{tcs}); err != nil {
+		t.Fatalf("error executing template: %v", err)
+	}
 }
 
 type listener struct {
@@ -335,7 +362,7 @@ func createFakeConn(tablet *topodatapb.Tablet, c chan *querypb.StreamHealthRespo
 	return conn
 }
 
-func discoveryDialer(ctx context.Context, tablet *topodatapb.Tablet, timeout time.Duration) (tabletconn.TabletConn, error) {
+func discoveryDialer(tablet *topodatapb.Tablet, timeout time.Duration) (tabletconn.TabletConn, error) {
 	key := TabletToMapKey(tablet)
 	return connMap[key], nil
 }
@@ -376,53 +403,54 @@ func (fc *fakeConn) StreamHealth(ctx context.Context) (tabletconn.StreamHealthRe
 }
 
 // Execute implements tabletconn.TabletConn.
-func (fc *fakeConn) Execute(ctx context.Context, query string, bindVars map[string]interface{}, transactionID int64) (*sqltypes.Result, error) {
+func (fc *fakeConn) Execute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, transactionID int64) (*sqltypes.Result, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
 // ExecuteBatch implements tabletconn.TabletConn.
-func (fc *fakeConn) ExecuteBatch(ctx context.Context, queries []querytypes.BoundQuery, asTransaction bool, transactionID int64) ([]sqltypes.Result, error) {
+func (fc *fakeConn) ExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool, transactionID int64) ([]sqltypes.Result, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
 // StreamExecute implements tabletconn.TabletConn.
-func (fc *fakeConn) StreamExecute(ctx context.Context, query string, bindVars map[string]interface{}) (sqltypes.ResultStream, error) {
+func (fc *fakeConn) StreamExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}) (sqltypes.ResultStream, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
 // Begin implements tabletconn.TabletConn.
-func (fc *fakeConn) Begin(ctx context.Context) (int64, error) {
+func (fc *fakeConn) Begin(ctx context.Context, target *querypb.Target) (int64, error) {
 	return 0, fmt.Errorf("not implemented")
 }
 
 // Commit implements tabletconn.TabletConn.
-func (fc *fakeConn) Commit(ctx context.Context, transactionID int64) error {
+func (fc *fakeConn) Commit(ctx context.Context, target *querypb.Target, transactionID int64) error {
 	return fmt.Errorf("not implemented")
 }
 
 // Rollback implements tabletconn.TabletConn.
-func (fc *fakeConn) Rollback(ctx context.Context, transactionID int64) error {
+func (fc *fakeConn) Rollback(ctx context.Context, target *querypb.Target, transactionID int64) error {
 	return fmt.Errorf("not implemented")
 }
 
 // BeginExecute implements tabletconn.TabletConn.
-func (fc *fakeConn) BeginExecute(ctx context.Context, query string, bindVars map[string]interface{}) (*sqltypes.Result, int64, error) {
+func (fc *fakeConn) BeginExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}) (*sqltypes.Result, int64, error) {
 	return nil, 0, fmt.Errorf("not implemented")
 }
 
 // BeginExecuteBatch implements tabletconn.TabletConn.
-func (fc *fakeConn) BeginExecuteBatch(ctx context.Context, queries []querytypes.BoundQuery, asTransaction bool) ([]sqltypes.Result, int64, error) {
+func (fc *fakeConn) BeginExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool) ([]sqltypes.Result, int64, error) {
 	return nil, 0, fmt.Errorf("not implemented")
 }
 
 // SplitQuery implements tabletconn.TabletConn.
-func (fc *fakeConn) SplitQuery(ctx context.Context, query querytypes.BoundQuery, splitColumn string, splitCount int64) ([]querytypes.QuerySplit, error) {
+func (fc *fakeConn) SplitQuery(ctx context.Context, target *querypb.Target, query querytypes.BoundQuery, splitColumn string, splitCount int64) ([]querytypes.QuerySplit, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
 // SplitQueryV2 implements tabletconn.TabletConn.
 func (fc *fakeConn) SplitQueryV2(
 	ctx context.Context,
+	target *querypb.Target,
 	query querytypes.BoundQuery,
 	splitColumn []string,
 	splitCount int64,
@@ -430,11 +458,6 @@ func (fc *fakeConn) SplitQueryV2(
 	algorithm querypb.SplitQueryRequest_Algorithm,
 ) ([]querytypes.QuerySplit, error) {
 	return nil, fmt.Errorf("not implemented")
-}
-
-// SetTarget implements tabletconn.TabletConn.
-func (fc *fakeConn) SetTarget(keyspace, shard string, tabletType topodatapb.TabletType) error {
-	return fmt.Errorf("not implemented")
 }
 
 // Tablet returns the tablet associated with the connection.

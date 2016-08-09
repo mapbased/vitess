@@ -439,13 +439,14 @@ Blocks until no new queries were observed on all tablets with the given tablet t
 
 #### Example
 
-<pre class="command-example">WaitForDrain [-timeout &lt;duration&gt;] &lt;keyspace/shard&gt; &lt;served tablet type&gt;</pre>
+<pre class="command-example">WaitForDrain [-timeout &lt;duration&gt;] [-retry_delay &lt;duration&gt;] [-initial_wait &lt;duration&gt;] &lt;keyspace/shard&gt; &lt;served tablet type&gt;</pre>
 
 #### Flags
 
 | Name | Type | Definition |
 | :-------- | :--------- | :--------- |
 | cells | string | Specifies a comma-separated list of cells to look for tablets |
+| initial_wait | Duration | Time to wait for all tablets to check in |
 | retry_delay | Duration | Time to wait between two checks |
 | timeout | Duration | Timeout after which the command fails |
 
@@ -1704,6 +1705,7 @@ Blocks until the specified shard has caught up with the filtered replication of 
 * [Ping](#ping)
 * [RefreshState](#refreshstate)
 * [ReparentTablet](#reparenttablet)
+* [RestoreFromBackup](#restorefrombackup)
 * [RunHealthCheck](#runhealthcheck)
 * [SetReadOnly](#setreadonly)
 * [SetReadWrite](#setreadwrite)
@@ -1993,6 +1995,19 @@ Reparent a tablet to the current master in the shard. This only works if the cur
 #### Errors
 
 * action <code>&lt;ReparentTablet&gt;</code> requires <code>&lt;tablet alias&gt;</code> This error occurs if the command is not called with exactly one argument.
+
+
+### RestoreFromBackup
+
+Stops mysqld and restores the data from the latest backup.
+
+#### Example
+
+<pre class="command-example">RestoreFromBackup &lt;tablet alias&gt;</pre>
+
+#### Errors
+
+* The <code>&lt;RestoreFromBackup&gt;</code> command requires the <code>&lt;tablet alias&gt;</code> argument. This error occurs if the command is not called with exactly one argument.
 
 
 ### RunHealthCheck

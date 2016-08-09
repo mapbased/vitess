@@ -9,7 +9,7 @@ import unittest
 import environment
 import tablet
 import utils
-
+from selenium.common.exceptions import NoSuchElementException
 
 # range '' - 80
 shard_0_master = tablet.Tablet()
@@ -28,12 +28,22 @@ tablets = [shard_0_master, shard_0_replica, shard_1_master, shard_1_replica,
 
 def setUpModule():
   try:
+    if utils.options.xvfb:
+      try:
+        # This will be killed automatically by utils.kill_sub_processes()
+        utils.run_bg(['Xvfb', ':15', '-ac'])
+        os.environ['DISPLAY'] = ':15'
+      except OSError as err:
+        # Despite running in background, utils.run_bg() will throw immediately
+        # if the Xvfb binary is not found.
+        logging.error(
+            "Can't start Xvfb (will try local DISPLAY instead): %s", err)
+
     environment.topo_server().setup()
 
     setup_procs = [t.init_mysql() for t in tablets]
     utils.Vtctld().start()
     utils.wait_procs(setup_procs)
-
   except:
     tearDownModule()
     raise
@@ -140,8 +150,19 @@ class TestVtctldWeb(unittest.TestCase):
     return self.driver.find_element_by_id('%s-card' % keyspace_name)
 
   def _get_shards(self, keyspace_name):
-    shard_grid = self.driver.find_element_by_id('%s-shard-list' % keyspace_name)
+    shard_grid = self.driver.find_element_by_id(
+        '%s-shards-list' % keyspace_name)
     return shard_grid.text.split('\n')
+
+  def _get_serving_shards(self, keyspace_name):
+    serving_shards = self.driver.find_element_by_id(
+        '%s-serving-list' % keyspace_name)
+    return serving_shards.text.split('\n')
+
+  def _get_inactive_shards(self, keyspace_name):
+    inactive_shards = self.driver.find_element_by_id(
+        '%s-inactive-list' % keyspace_name)
+    return inactive_shards.text.split('\n')
 
   def _get_shard_element(self, keyspace_name, shard_name):
     return self._get_keyspace_element(keyspace_name).find_element_by_link_text(
@@ -191,15 +212,27 @@ class TestVtctldWeb(unittest.TestCase):
     logging.info('Keyspaces: %s', ', '.join(keyspace_names))
     self.assertListEqual(['test_keyspace', 'test_keyspace2'], keyspace_names)
 
-    test_keyspace_shards = self._get_shards('test_keyspace')
+    test_keyspace_serving_shards = self._get_serving_shards('test_keyspace')
     logging.info(
-        'Shards in test_keyspace: %s', ', '.join(test_keyspace_shards))
-    self.assertListEqual(test_keyspace_shards, ['-80', '80-'])
+        'Serving Shards in test_keyspace: %s', ', '.join(
+            test_keyspace_serving_shards))
+    self.assertListEqual(test_keyspace_serving_shards, ['-80', '80-'])
 
-    test_keyspace2_shards = self._get_shards('test_keyspace2')
+    test_keyspace2_serving_shards = self._get_serving_shards('test_keyspace2')
     logging.info(
-        'Shards in test_keyspace2: %s', ', '.join(test_keyspace2_shards))
-    self.assertListEqual(test_keyspace2_shards, ['0'])
+        'Serving Shards in test_keyspace2: %s', ', '.join(
+            test_keyspace2_serving_shards))
+    self.assertListEqual(test_keyspace2_serving_shards, ['0'])
+
+    with self.assertRaises(NoSuchElementException):
+      self._get_inactive_shards('test_keyspace')
+      logging.info(
+          'Inactive Shards in test_keyspace: %s', ', '.join([]))
+
+    with self.assertRaises(NoSuchElementException):
+      self._get_inactive_shards('test_keyspace2')
+      logging.info(
+          'Inactive Shards in test_keyspace2: %s', ', '.join([]))
 
   def test_shard_overview(self):
     logging.info('Testing shard overview')
@@ -215,5 +248,11 @@ class TestVtctldWeb(unittest.TestCase):
         'test_keyspace2', '0', {'master': 1, 'replica': 1, 'rdonly': 1})
 
 
+def add_test_options(parser):
+  parser.add_option(
+      '--no-xvfb', action='store_false', dest='xvfb', default=True,
+      help='Use local DISPLAY instead of headless Xvfb mode.')
+
+
 if __name__ == '__main__':
-  utils.main()
+  utils.main(test_options=add_test_options)

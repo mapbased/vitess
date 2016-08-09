@@ -76,11 +76,15 @@ type TabletManagerClient interface {
 	// ApplySchema will apply a schema change
 	ApplySchema(ctx context.Context, tablet *topodatapb.Tablet, change *tmutils.SchemaChange) (*tabletmanagerdatapb.SchemaChangeResult, error)
 
-	// ExecuteFetchAsDba executes a query remotely using the DBA pool
-	ExecuteFetchAsDba(ctx context.Context, tablet *topodatapb.Tablet, query []byte, maxRows int, disableBinlogs, reloadSchema bool) (*querypb.QueryResult, error)
+	// ExecuteFetchAsDba executes a query remotely using the DBA pool.
+	// If usePool is set, a connection pool may be used to make the
+	// query faster. Close() should close the pool in that case.
+	ExecuteFetchAsDba(ctx context.Context, tablet *topodatapb.Tablet, usePool bool, query []byte, maxRows int, disableBinlogs, reloadSchema bool) (*querypb.QueryResult, error)
 
 	// ExecuteFetchAsApp executes a query remotely using the App pool
-	ExecuteFetchAsApp(ctx context.Context, tablet *topodatapb.Tablet, query []byte, maxRows int) (*querypb.QueryResult, error)
+	// If usePool is set, a connection pool may be used to make the
+	// query faster. Close() should close the pool in that case.
+	ExecuteFetchAsApp(ctx context.Context, tablet *topodatapb.Tablet, usePool bool, query []byte, maxRows int) (*querypb.QueryResult, error)
 
 	//
 	// Replication related methods
@@ -182,6 +186,17 @@ type TabletManagerClient interface {
 
 	// Backup creates a database backup
 	Backup(ctx context.Context, tablet *topodatapb.Tablet, concurrency int) (logutil.EventStream, error)
+
+	// RestoreFromBackup deletes local data and restores database from backup
+	RestoreFromBackup(ctx context.Context, tablet *topodatapb.Tablet) (logutil.EventStream, error)
+
+	//
+	// Management methods
+	//
+
+	// Close will be called when this TabletManagerClient won't be
+	// used any more. It can be used to free any resource.
+	Close()
 }
 
 // TabletManagerClientFactory is the factory method to create

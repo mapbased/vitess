@@ -130,12 +130,12 @@ func (client *FakeTabletManagerClient) ApplySchema(ctx context.Context, tablet *
 }
 
 // ExecuteFetchAsDba is part of the tmclient.TabletManagerClient interface.
-func (client *FakeTabletManagerClient) ExecuteFetchAsDba(ctx context.Context, tablet *topodatapb.Tablet, query []byte, maxRows int, disableBinlogs, reloadSchema bool) (*querypb.QueryResult, error) {
+func (client *FakeTabletManagerClient) ExecuteFetchAsDba(ctx context.Context, tablet *topodatapb.Tablet, usePool bool, query []byte, maxRows int, disableBinlogs, reloadSchema bool) (*querypb.QueryResult, error) {
 	return &querypb.QueryResult{}, nil
 }
 
 // ExecuteFetchAsApp is part of the tmclient.TabletManagerClient interface.
-func (client *FakeTabletManagerClient) ExecuteFetchAsApp(ctx context.Context, tablet *topodatapb.Tablet, query []byte, maxRows int) (*querypb.QueryResult, error) {
+func (client *FakeTabletManagerClient) ExecuteFetchAsApp(ctx context.Context, tablet *topodatapb.Tablet, usePool bool, query []byte, maxRows int) (*querypb.QueryResult, error) {
 	return &querypb.QueryResult{}, nil
 }
 
@@ -278,4 +278,17 @@ func (e *eofEventStream) Recv() (*logutilpb.Event, error) {
 // Backup is part of the tmclient.TabletManagerClient interface.
 func (client *FakeTabletManagerClient) Backup(ctx context.Context, tablet *topodatapb.Tablet, concurrency int) (logutil.EventStream, error) {
 	return &eofEventStream{}, nil
+}
+
+// RestoreFromBackup is part of the tmclient.TabletManagerClient interface.
+func (client *FakeTabletManagerClient) RestoreFromBackup(ctx context.Context, tablet *topodatapb.Tablet) (logutil.EventStream, error) {
+	return &eofEventStream{}, nil
+}
+
+//
+// Management related methods
+//
+
+// Close is part of the tmclient.TabletManagerClient interface.
+func (client *FakeTabletManagerClient) Close() {
 }

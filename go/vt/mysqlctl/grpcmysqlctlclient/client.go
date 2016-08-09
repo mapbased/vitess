@@ -41,8 +41,10 @@ func factory(network, addr string, dialTimeout time.Duration) (mysqlctlclient.My
 }
 
 // Start is part of the MysqlctlClient interface.
-func (c *client) Start(ctx context.Context) error {
-	_, err := c.c.Start(ctx, &mysqlctlpb.StartRequest{})
+func (c *client) Start(ctx context.Context, mysqldArgs ...string) error {
+	_, err := c.c.Start(ctx, &mysqlctlpb.StartRequest{
+		MysqldArgs: mysqldArgs,
+	})
 	return err
 }
 
@@ -57,6 +59,12 @@ func (c *client) Shutdown(ctx context.Context, waitForMysqld bool) error {
 // RunMysqlUpgrade is part of the MysqlctlClient interface.
 func (c *client) RunMysqlUpgrade(ctx context.Context) error {
 	_, err := c.c.RunMysqlUpgrade(ctx, &mysqlctlpb.RunMysqlUpgradeRequest{})
+	return err
+}
+
+// ReinitConfig is part of the MysqlctlClient interface.
+func (c *client) ReinitConfig(ctx context.Context) error {
+	_, err := c.c.ReinitConfig(ctx, &mysqlctlpb.ReinitConfigRequest{})
 	return err
 }
 

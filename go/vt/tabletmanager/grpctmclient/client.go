@@ -43,22 +43,25 @@ func init() {
 	})
 }
 
+type tmc struct {
+	cc     *grpc.ClientConn
+	client tabletmanagerservicepb.TabletManagerClient
+}
+
 // Client implements tmclient.TabletManagerClient
 type Client struct {
 	// This cache of connections is to maximize QPS for ExecuteFetch.
-	// Note we'll keep the clients open and never close them.
+	// Note we'll keep the clients open and close them upon Close() only.
 	// But that's OK because usually the tasks that use them are
 	// one-purpose only.
 	// The map is protected by the mutex.
 	mu           sync.Mutex
-	rpcClientMap map[string]chan tabletmanagerservicepb.TabletManagerClient
+	rpcClientMap map[string]chan *tmc
 }
 
 // NewClient returns a new gRPC client.
 func NewClient() *Client {
-	return &Client{
-		rpcClientMap: make(map[string]chan tabletmanagerservicepb.TabletManagerClient),
-	}
+	return &Client{}
 }
 
 // dial returns a client to use
@@ -83,9 +86,12 @@ func (client *Client) dialPool(tablet *topodatapb.Tablet) (tabletmanagerservicep
 	}
 
 	client.mu.Lock()
+	if client.rpcClientMap == nil {
+		client.rpcClientMap = make(map[string]chan *tmc)
+	}
 	c, ok := client.rpcClientMap[addr]
 	if !ok {
-		c = make(chan tabletmanagerservicepb.TabletManagerClient, *concurrency)
+		c = make(chan *tmc, *concurrency)
 		client.rpcClientMap[addr] = c
 		client.mu.Unlock()
 
@@ -94,7 +100,10 @@ func (client *Client) dialPool(tablet *topodatapb.Tablet) (tabletmanagerservicep
 			if err != nil {
 				return nil, err
 			}
-			c <- tabletmanagerservicepb.NewTabletManagerClient(cc)
+			c <- &tmc{
+				cc:     cc,
+				client: tabletmanagerservicepb.NewTabletManagerClient(cc),
+			}
 		}
 	} else {
 		client.mu.Unlock()
@@ -102,7 +111,7 @@ func (client *Client) dialPool(tablet *topodatapb.Tablet) (tabletmanagerservicep
 
 	result := <-c
 	c <- result
-	return result, nil
+	return result.client, nil
 }
 
 //
@@ -324,11 +333,23 @@ func (client *Client) ApplySchema(ctx context.Context, tablet *topodatapb.Tablet
 }
 
 // ExecuteFetchAsDba is part of the tmclient.TabletManagerClient interface.
-func (client *Client) ExecuteFetchAsDba(ctx context.Context, tablet *topodatapb.Tablet, query []byte, maxRows int, disableBinlogs, reloadSchema bool) (*querypb.QueryResult, error) {
-	c, err := client.dialPool(tablet)
-	if err != nil {
-		return nil, err
+func (client *Client) ExecuteFetchAsDba(ctx context.Context, tablet *topodatapb.Tablet, usePool bool, query []byte, maxRows int, disableBinlogs, reloadSchema bool) (*querypb.QueryResult, error) {
+	var c tabletmanagerservicepb.TabletManagerClient
+	var err error
+	if usePool {
+		c, err = client.dialPool(tablet)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var cc *grpc.ClientConn
+		cc, c, err = client.dial(tablet)
+		if err != nil {
+			return nil, err
+		}
+		defer cc.Close()
 	}
+
 	response, err := c.ExecuteFetchAsDba(ctx, &tabletmanagerdatapb.ExecuteFetchAsDbaRequest{
 		Query:          query,
 		DbName:         topoproto.TabletDbName(tablet),
@@ -343,11 +364,23 @@ func (client *Client) ExecuteFetchAsDba(ctx context.Context, tablet *topodatapb.
 }
 
 // ExecuteFetchAsApp is part of the tmclient.TabletManagerClient interface.
-func (client *Client) ExecuteFetchAsApp(ctx context.Context, tablet *topodatapb.Tablet, query []byte, maxRows int) (*querypb.QueryResult, error) {
-	c, err := client.dialPool(tablet)
-	if err != nil {
-		return nil, err
+func (client *Client) ExecuteFetchAsApp(ctx context.Context, tablet *topodatapb.Tablet, usePool bool, query []byte, maxRows int) (*querypb.QueryResult, error) {
+	var c tabletmanagerservicepb.TabletManagerClient
+	var err error
+	if usePool {
+		c, err = client.dialPool(tablet)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var cc *grpc.ClientConn
+		cc, c, err = client.dial(tablet)
+		if err != nil {
+			return nil, err
+		}
+		defer cc.Close()
 	}
+
 	response, err := c.ExecuteFetchAsApp(ctx, &tabletmanagerdatapb.ExecuteFetchAsAppRequest{
 		Query:   query,
 		MaxRows: uint64(maxRows),
@@ -672,12 +705,12 @@ func (client *Client) PromoteSlave(ctx context.Context, tablet *topodatapb.Table
 //
 // Backup related methods
 //
-type eventStreamAdapter struct {
+type backupStreamAdapter struct {
 	stream tabletmanagerservicepb.TabletManager_BackupClient
 	cc     *grpc.ClientConn
 }
 
-func (e *eventStreamAdapter) Recv() (*logutilpb.Event, error) {
+func (e *backupStreamAdapter) Recv() (*logutilpb.Event, error) {
 	br, err := e.stream.Recv()
 	if err != nil {
 		e.cc.Close()
@@ -700,8 +733,53 @@ func (client *Client) Backup(ctx context.Context, tablet *topodatapb.Tablet, con
 		cc.Close()
 		return nil, err
 	}
-	return &eventStreamAdapter{
+	return &backupStreamAdapter{
 		stream: stream,
 		cc:     cc,
 	}, nil
+}
+
+type restoreFromBackupStreamAdapter struct {
+	stream tabletmanagerservicepb.TabletManager_RestoreFromBackupClient
+	cc     *grpc.ClientConn
+}
+
+func (e *restoreFromBackupStreamAdapter) Recv() (*logutilpb.Event, error) {
+	br, err := e.stream.Recv()
+	if err != nil {
+		e.cc.Close()
+		return nil, err
+	}
+	return br.Event, nil
+}
+
+// RestoreFromBackup is part of the tmclient.TabletManagerClient interface.
+func (client *Client) RestoreFromBackup(ctx context.Context, tablet *topodatapb.Tablet) (logutil.EventStream, error) {
+	cc, c, err := client.dial(tablet)
+	if err != nil {
+		return nil, err
+	}
+
+	stream, err := c.RestoreFromBackup(ctx, &tabletmanagerdatapb.RestoreFromBackupRequest{})
+	if err != nil {
+		cc.Close()
+		return nil, err
+	}
+	return &restoreFromBackupStreamAdapter{
+		stream: stream,
+		cc:     cc,
+	}, nil
+}
+
+// Close is part of the tmclient.TabletManagerClient interface.
+func (client *Client) Close() {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	for _, c := range client.rpcClientMap {
+		close(c)
+		for ch := range c {
+			ch.cc.Close()
+		}
+	}
+	client.rpcClientMap = nil
 }

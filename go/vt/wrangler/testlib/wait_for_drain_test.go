@@ -53,10 +53,15 @@ func testWaitForDrain(t *testing.T, desc, cells string, drain drainDirective, ex
 	const keyspace = "ks"
 	const shard = "-80"
 
+	// This value needs to be bigger than the -initial_wait value below.
+	// Otherwise in this test, we close the StreamHealth RPC because of
+	// tablet inactivity at the same time as the end of the initial wait,
+	// and the test fails.
+	flag.Set("vtctl_healthcheck_timeout", "1s")
+
 	db := fakesqldb.Register()
 	ts := zktestserver.New(t, []string{"cell1", "cell2"})
 	wr := wrangler.New(logutil.NewConsoleLogger(), ts, tmclient.NewTabletManagerClient())
-	flag.Set("vtctl_healthcheck_timeout", "0.25s")
 	vp := NewVtctlPipe(t, ts)
 	defer vp.Close()
 
@@ -84,8 +89,8 @@ func testWaitForDrain(t *testing.T, desc, cells string, drain drainDirective, ex
 	}
 	fqs1 := fakes.NewStreamHealthQueryService(target)
 	fqs2 := fakes.NewStreamHealthQueryService(target)
-	grpcqueryservice.RegisterForTest(t1.RPCServer, fqs1)
-	grpcqueryservice.RegisterForTest(t2.RPCServer, fqs2)
+	grpcqueryservice.Register(t1.RPCServer, fqs1)
+	grpcqueryservice.Register(t2.RPCServer, fqs2)
 
 	// Run vtctl WaitForDrain and react depending on its output.
 	timeout := "0.5s"
@@ -95,8 +100,13 @@ func testWaitForDrain(t *testing.T, desc, cells string, drain drainDirective, ex
 		timeout = "30s"
 	}
 	stream, err := vp.RunAndStreamOutput(
-		[]string{"WaitForDrain", "-cells", cells, "-retry_delay", "100ms", "-timeout", timeout,
-			keyspace + "/" + shard, topodatapb.TabletType_REPLICA.String()})
+		[]string{"WaitForDrain",
+			"-cells", cells,
+			"-retry_delay", "100ms",
+			"-timeout", timeout,
+			"-initial_wait", "100ms",
+			keyspace + "/" + shard,
+			topodatapb.TabletType_REPLICA.String()})
 	if err != nil {
 		t.Fatalf("VtctlPipe.RunAndStreamOutput() failed: %v", err)
 	}
