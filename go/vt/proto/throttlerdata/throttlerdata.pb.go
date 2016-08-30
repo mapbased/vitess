@@ -13,6 +13,13 @@ It has these top-level messages:
 	MaxRatesResponse
 	SetMaxRateRequest
 	SetMaxRateResponse
+	Configuration
+	GetConfigurationRequest
+	GetConfigurationResponse
+	UpdateConfigurationRequest
+	UpdateConfigurationResponse
+	ResetConfigurationRequest
+	ResetConfigurationResponse
 */
 package throttlerdata
 
@@ -80,28 +87,215 @@ func (m *SetMaxRateResponse) String() string            { return proto.CompactTe
 func (*SetMaxRateResponse) ProtoMessage()               {}
 func (*SetMaxRateResponse) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
 
+// Configuration holds the configuration parameters for the
+// MaxReplicationLagModule which adaptively adjusts the throttling rate based on
+// the observed replication lag across all replicas.
+type Configuration struct {
+	// target_replication_lag_sec is the replication lag (in seconds) the
+	// MaxReplicationLagModule tries to aim for.
+	// If it is within the target, it tries to increase the throttler
+	// rate, otherwise it will lower it based on an educated guess of the
+	// slave throughput.
+	TargetReplicationLagSec int64 `protobuf:"varint,1,opt,name=target_replication_lag_sec,json=targetReplicationLagSec" json:"target_replication_lag_sec,omitempty"`
+	// max_replication_lag_sec is meant as a last resort.
+	// By default, the module tries to find out the system maximum capacity while
+	// trying to keep the replication lag around "target_replication_lag_sec".
+	// Usually, we'll wait min_duration_between_changes_sec to see the effect of a
+	// throttler rate change on the replication lag.
+	// But if the lag goes above this field's value we will go into an "emergency"
+	// state and throttle more aggressively (see "emergency_decrease" below).
+	// This is the only way to ensure that the system will recover.
+	MaxReplicationLagSec int64 `protobuf:"varint,2,opt,name=max_replication_lag_sec,json=maxReplicationLagSec" json:"max_replication_lag_sec,omitempty"`
+	// initial_rate is the rate at which the module will start.
+	InitialRate int64 `protobuf:"varint,3,opt,name=initial_rate,json=initialRate" json:"initial_rate,omitempty"`
+	// max_increase defines by how much we will increase the rate
+	// e.g. 0.05 increases the rate by 5% while 1.0 by 100%.
+	// Note that any increase will let the system wait for at least
+	// (1 / MaxIncrease) seconds. If we wait for shorter periods of time, we
+	// won't notice if the rate increase also increases the replication lag.
+	// (If the system was already at its maximum capacity (e.g. 1k QPS) and we
+	// increase the rate by e.g. 5% to 1050 QPS, it will take 20 seconds until
+	// 1000 extra queries are buffered and the lag increases by 1 second.)
+	MaxIncrease float64 `protobuf:"fixed64,4,opt,name=max_increase,json=maxIncrease" json:"max_increase,omitempty"`
+	// emergency_decrease defines by how much we will decrease the current rate
+	// if the observed replication lag is above "max_replication_lag_sec".
+	// E.g. 0.50 decreases the current rate by 50%.
+	EmergencyDecrease float64 `protobuf:"fixed64,5,opt,name=emergency_decrease,json=emergencyDecrease" json:"emergency_decrease,omitempty"`
+	// min_duration_between_changes_sec specifies how long we'll wait for the last
+	// rate increase or decrease to have an effect on the system.
+	MinDurationBetweenChangesSec int64 `protobuf:"varint,6,opt,name=min_duration_between_changes_sec,json=minDurationBetweenChangesSec" json:"min_duration_between_changes_sec,omitempty"`
+	// max_duration_between_increases_sec specifies how long we'll wait at most
+	// for the last rate increase to have an effect on the system.
+	MaxDurationBetweenIncreasesSec int64 `protobuf:"varint,7,opt,name=max_duration_between_increases_sec,json=maxDurationBetweenIncreasesSec" json:"max_duration_between_increases_sec,omitempty"`
+	// ignore_n_slowest_replicas will ignore replication lag updates from the
+	// N slowest replicas. Under certain circumstances, replicas are still
+	// considered e.g. a) if the lag is at most max_replication_lag_sec, b) there
+	// are less than N+1 replicas or c) the lag increased on each replica such
+	// that all replicas were ignored in a row.
+	IgnoreNSlowestReplicas int32 `protobuf:"varint,8,opt,name=ignore_n_slowest_replicas,json=ignoreNSlowestReplicas" json:"ignore_n_slowest_replicas,omitempty"`
+	// age_bad_rate_after_sec is the duration after which an unchanged bad rate
+	// will "age out" and increase by "bad_rate_increase".
+	// Bad rates are tracked by the code in memory.go and serve as an upper bound
+	// for future rate changes. This ensures that the adaptive throttler does not
+	// try known too high (bad) rates over and over again.
+	// To avoid that temporary degradations permanently reduce the maximum rate,
+	// a stable bad rate "ages out" after "age_bad_rate_after_sec".
+	AgeBadRateAfterSec int64 `protobuf:"varint,9,opt,name=age_bad_rate_after_sec,json=ageBadRateAfterSec" json:"age_bad_rate_after_sec,omitempty"`
+	// bad_rate_increase defines the percentage by which a bad rate will be
+	// increased when it's aging out.
+	BadRateIncrease float64 `protobuf:"fixed64,10,opt,name=bad_rate_increase,json=badRateIncrease" json:"bad_rate_increase,omitempty"`
+}
+
+func (m *Configuration) Reset()                    { *m = Configuration{} }
+func (m *Configuration) String() string            { return proto.CompactTextString(m) }
+func (*Configuration) ProtoMessage()               {}
+func (*Configuration) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{4} }
+
+// GetConfigurationRequest is the payload for the GetConfiguration RPC.
+type GetConfigurationRequest struct {
+	// throttler_name specifies which throttler to select. If empty, all active
+	// throttlers will be selected.
+	ThrottlerName string `protobuf:"bytes,1,opt,name=throttler_name,json=throttlerName" json:"throttler_name,omitempty"`
+}
+
+func (m *GetConfigurationRequest) Reset()                    { *m = GetConfigurationRequest{} }
+func (m *GetConfigurationRequest) String() string            { return proto.CompactTextString(m) }
+func (*GetConfigurationRequest) ProtoMessage()               {}
+func (*GetConfigurationRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{5} }
+
+// GetConfigurationResponse is returned by the GetConfiguration RPC.
+type GetConfigurationResponse struct {
+	// max_rates returns the configurations for each throttler.
+	// It's keyed by the throttler name.
+	Configurations map[string]*Configuration `protobuf:"bytes,1,rep,name=configurations" json:"configurations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+}
+
+func (m *GetConfigurationResponse) Reset()                    { *m = GetConfigurationResponse{} }
+func (m *GetConfigurationResponse) String() string            { return proto.CompactTextString(m) }
+func (*GetConfigurationResponse) ProtoMessage()               {}
+func (*GetConfigurationResponse) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{6} }
+
+func (m *GetConfigurationResponse) GetConfigurations() map[string]*Configuration {
+	if m != nil {
+		return m.Configurations
+	}
+	return nil
+}
+
+// UpdateConfigurationRequest is the payload for the UpdateConfiguration RPC.
+type UpdateConfigurationRequest struct {
+	// throttler_name specifies which throttler to update. If empty, all active
+	// throttlers will be updated.
+	ThrottlerName string `protobuf:"bytes,1,opt,name=throttler_name,json=throttlerName" json:"throttler_name,omitempty"`
+	// configuration is the new (partial) configuration.
+	Configuration *Configuration `protobuf:"bytes,2,opt,name=configuration" json:"configuration,omitempty"`
+	// copy_zero_values specifies whether fields with zero values should be copied
+	// as well.
+	CopyZeroValues bool `protobuf:"varint,3,opt,name=copy_zero_values,json=copyZeroValues" json:"copy_zero_values,omitempty"`
+}
+
+func (m *UpdateConfigurationRequest) Reset()                    { *m = UpdateConfigurationRequest{} }
+func (m *UpdateConfigurationRequest) String() string            { return proto.CompactTextString(m) }
+func (*UpdateConfigurationRequest) ProtoMessage()               {}
+func (*UpdateConfigurationRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{7} }
+
+func (m *UpdateConfigurationRequest) GetConfiguration() *Configuration {
+	if m != nil {
+		return m.Configuration
+	}
+	return nil
+}
+
+// UpdateConfigurationResponse is returned by the UpdateConfiguration RPC.
+type UpdateConfigurationResponse struct {
+	// names is the list of throttler names which were updated.
+	Names []string `protobuf:"bytes,1,rep,name=names" json:"names,omitempty"`
+}
+
+func (m *UpdateConfigurationResponse) Reset()                    { *m = UpdateConfigurationResponse{} }
+func (m *UpdateConfigurationResponse) String() string            { return proto.CompactTextString(m) }
+func (*UpdateConfigurationResponse) ProtoMessage()               {}
+func (*UpdateConfigurationResponse) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{8} }
+
+// ResetConfigurationRequest is the payload for the ResetConfiguration RPC.
+type ResetConfigurationRequest struct {
+	// throttler_name specifies which throttler to reset. If empty, all active
+	// throttlers will be reset.
+	ThrottlerName string `protobuf:"bytes,1,opt,name=throttler_name,json=throttlerName" json:"throttler_name,omitempty"`
+}
+
+func (m *ResetConfigurationRequest) Reset()                    { *m = ResetConfigurationRequest{} }
+func (m *ResetConfigurationRequest) String() string            { return proto.CompactTextString(m) }
+func (*ResetConfigurationRequest) ProtoMessage()               {}
+func (*ResetConfigurationRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{9} }
+
+// ResetConfigurationResponse is returned by the ResetConfiguration RPC.
+type ResetConfigurationResponse struct {
+	// names is the list of throttler names which were updated.
+	Names []string `protobuf:"bytes,1,rep,name=names" json:"names,omitempty"`
+}
+
+func (m *ResetConfigurationResponse) Reset()                    { *m = ResetConfigurationResponse{} }
+func (m *ResetConfigurationResponse) String() string            { return proto.CompactTextString(m) }
+func (*ResetConfigurationResponse) ProtoMessage()               {}
+func (*ResetConfigurationResponse) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{10} }
+
 func init() {
 	proto.RegisterType((*MaxRatesRequest)(nil), "throttlerdata.MaxRatesRequest")
 	proto.RegisterType((*MaxRatesResponse)(nil), "throttlerdata.MaxRatesResponse")
 	proto.RegisterType((*SetMaxRateRequest)(nil), "throttlerdata.SetMaxRateRequest")
 	proto.RegisterType((*SetMaxRateResponse)(nil), "throttlerdata.SetMaxRateResponse")
+	proto.RegisterType((*Configuration)(nil), "throttlerdata.Configuration")
+	proto.RegisterType((*GetConfigurationRequest)(nil), "throttlerdata.GetConfigurationRequest")
+	proto.RegisterType((*GetConfigurationResponse)(nil), "throttlerdata.GetConfigurationResponse")
+	proto.RegisterType((*UpdateConfigurationRequest)(nil), "throttlerdata.UpdateConfigurationRequest")
+	proto.RegisterType((*UpdateConfigurationResponse)(nil), "throttlerdata.UpdateConfigurationResponse")
+	proto.RegisterType((*ResetConfigurationRequest)(nil), "throttlerdata.ResetConfigurationRequest")
+	proto.RegisterType((*ResetConfigurationResponse)(nil), "throttlerdata.ResetConfigurationResponse")
 }
 
 func init() { proto.RegisterFile("throttlerdata.proto", fileDescriptor0) }
 
 var fileDescriptor0 = []byte{
-	// 204 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0xe2, 0x12, 0x2e, 0xc9, 0x28, 0xca,
-	0x2f, 0x29, 0xc9, 0x49, 0x2d, 0x4a, 0x49, 0x2c, 0x49, 0xd4, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17,
-	0xe2, 0x45, 0x11, 0x54, 0x12, 0xe4, 0xe2, 0xf7, 0x4d, 0xac, 0x08, 0x4a, 0x2c, 0x49, 0x2d, 0x0e,
-	0x4a, 0x2d, 0x2c, 0x4d, 0x2d, 0x2e, 0x51, 0xea, 0x63, 0xe4, 0x12, 0x40, 0x88, 0x15, 0x17, 0xe4,
-	0xe7, 0x15, 0xa7, 0x0a, 0x39, 0x70, 0xb1, 0x16, 0x81, 0x04, 0x24, 0x18, 0x15, 0x98, 0x35, 0xb8,
-	0x8d, 0xb4, 0xf4, 0x50, 0xcd, 0x46, 0x57, 0xaf, 0x07, 0xe6, 0xb9, 0xe6, 0x95, 0x14, 0x55, 0x06,
-	0x41, 0x34, 0x4a, 0x59, 0x70, 0x71, 0x21, 0x04, 0x85, 0x04, 0xb8, 0x98, 0xb3, 0x53, 0x2b, 0x25,
-	0x18, 0x15, 0x18, 0x35, 0x38, 0x83, 0x40, 0x4c, 0x21, 0x11, 0x2e, 0xd6, 0xb2, 0xc4, 0x9c, 0xd2,
-	0x54, 0x09, 0x26, 0x05, 0x46, 0x0d, 0xe6, 0x20, 0x08, 0xc7, 0x8a, 0xc9, 0x82, 0x51, 0x49, 0x9d,
-	0x4b, 0x30, 0x38, 0xb5, 0x04, 0x6a, 0x05, 0xd4, 0x95, 0x42, 0x42, 0x5c, 0x2c, 0x20, 0x73, 0xc1,
-	0x26, 0x30, 0x07, 0x81, 0xd9, 0x4a, 0x5a, 0x5c, 0x42, 0xc8, 0x0a, 0xa1, 0x4e, 0x17, 0xe1, 0x62,
-	0xcd, 0x4b, 0xcc, 0x85, 0x3a, 0x9d, 0x33, 0x08, 0xc2, 0x49, 0x62, 0x03, 0x07, 0x87, 0x31, 0x20,
-	0x00, 0x00, 0xff, 0xff, 0x27, 0x1c, 0xbc, 0x61, 0x25, 0x01, 0x00, 0x00,
+	// 629 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0xa4, 0x54, 0x5f, 0x4f, 0x13, 0x4f,
+	0x14, 0xcd, 0x52, 0xca, 0x0f, 0x6e, 0x7f, 0xfc, 0xe9, 0x40, 0xa0, 0x54, 0x62, 0xea, 0x26, 0xc6,
+	0x86, 0xc4, 0x3e, 0x94, 0x98, 0xa0, 0xbc, 0x60, 0x41, 0x8d, 0x46, 0x79, 0x58, 0xa2, 0x0f, 0xbe,
+	0x4c, 0x6e, 0xb7, 0x97, 0x65, 0x63, 0x77, 0x76, 0x9d, 0x19, 0xa4, 0xf5, 0x43, 0xf8, 0x35, 0x7c,
+	0xf6, 0x1b, 0xf9, 0x51, 0xcc, 0xcc, 0x4e, 0xff, 0x6c, 0x5b, 0x89, 0x09, 0x6f, 0x9d, 0x73, 0xcf,
+	0x9c, 0x7b, 0xe6, 0xf6, 0x9e, 0x85, 0x6d, 0x7d, 0x2d, 0x53, 0xad, 0xfb, 0x24, 0x7b, 0xa8, 0xb1,
+	0x95, 0xc9, 0x54, 0xa7, 0x6c, 0xbd, 0x00, 0xfa, 0x55, 0xd8, 0xfc, 0x80, 0x83, 0x00, 0x35, 0xa9,
+	0x80, 0xbe, 0xde, 0x90, 0xd2, 0xfe, 0x0f, 0x0f, 0xb6, 0x26, 0x98, 0xca, 0x52, 0xa1, 0x88, 0x9d,
+	0x42, 0x59, 0x1a, 0xa0, 0xe6, 0x35, 0x4a, 0xcd, 0x4a, 0xfb, 0xb0, 0x55, 0xd4, 0x9e, 0xe5, 0xb7,
+	0xec, 0xe9, 0x95, 0xd0, 0x72, 0x18, 0xe4, 0x17, 0xeb, 0xc7, 0x00, 0x13, 0x90, 0x6d, 0x41, 0xe9,
+	0x0b, 0x0d, 0x6b, 0x5e, 0xc3, 0x6b, 0xae, 0x05, 0xe6, 0x27, 0xdb, 0x81, 0xf2, 0x37, 0xec, 0xdf,
+	0x50, 0x6d, 0xa9, 0xe1, 0x35, 0x4b, 0x41, 0x7e, 0x78, 0xb1, 0x74, 0xec, 0xf9, 0x4f, 0xa0, 0x7a,
+	0x49, 0xda, 0xb5, 0x70, 0x2e, 0x19, 0x83, 0x65, 0xa3, 0x6b, 0x15, 0x4a, 0x81, 0xfd, 0xed, 0x1f,
+	0x02, 0x9b, 0x26, 0x3a, 0xeb, 0x3b, 0x50, 0x16, 0x98, 0x38, 0xeb, 0x6b, 0x41, 0x7e, 0xf0, 0x7f,
+	0x2e, 0xc3, 0xfa, 0x59, 0x2a, 0xae, 0xe2, 0xe8, 0x46, 0xa2, 0x8e, 0x53, 0xc1, 0x4e, 0xa0, 0xae,
+	0x51, 0x46, 0xa4, 0xb9, 0xa4, 0xac, 0x1f, 0x87, 0x16, 0xe5, 0x7d, 0x8c, 0xb8, 0xa2, 0xd0, 0xf5,
+	0xd9, 0xcb, 0x19, 0xc1, 0x84, 0xf0, 0x1e, 0xa3, 0x4b, 0x0a, 0xd9, 0x33, 0xd8, 0x4b, 0x70, 0xb0,
+	0xf0, 0x66, 0xfe, 0x9e, 0x9d, 0x04, 0x07, 0xf3, 0xd7, 0x1e, 0xc1, 0xff, 0xb1, 0x88, 0x75, 0x8c,
+	0x7d, 0x6e, 0x5f, 0x53, 0xb2, 0xdc, 0x8a, 0xc3, 0xcc, 0x33, 0x0c, 0xc5, 0x28, 0xc7, 0x22, 0x94,
+	0x84, 0x8a, 0x6a, 0xcb, 0x0d, 0xaf, 0xe9, 0x05, 0x95, 0x04, 0x07, 0x6f, 0x1d, 0xc4, 0x9e, 0x02,
+	0xa3, 0x84, 0x64, 0x44, 0x22, 0x1c, 0xf2, 0x1e, 0x39, 0x62, 0xd9, 0x12, 0xab, 0xe3, 0xca, 0xb9,
+	0x2b, 0xb0, 0xd7, 0xd0, 0x48, 0x62, 0xc1, 0x7b, 0xee, 0xe1, 0xbc, 0x4b, 0xfa, 0x96, 0x48, 0xf0,
+	0xf0, 0x1a, 0x45, 0x44, 0xca, 0x9a, 0x5e, 0xb1, 0x46, 0x0e, 0x92, 0x58, 0x9c, 0x3b, 0x5a, 0x27,
+	0x67, 0x9d, 0xe5, 0x24, 0x63, 0xfe, 0x1d, 0xf8, 0xc6, 0xd9, 0x9c, 0xce, 0xc8, 0x6a, 0xae, 0xf4,
+	0x9f, 0x55, 0x7a, 0x98, 0xe0, 0x60, 0x46, 0x69, 0x64, 0xdf, 0x6a, 0x3d, 0x87, 0xfd, 0x38, 0x12,
+	0xa9, 0x24, 0x2e, 0xb8, 0xea, 0xa7, 0xb7, 0xa4, 0xc6, 0x7f, 0x83, 0xaa, 0xad, 0x36, 0xbc, 0x66,
+	0x39, 0xd8, 0xcd, 0x09, 0x17, 0x97, 0x79, 0xd9, 0x0d, 0x53, 0xb1, 0x36, 0xec, 0x62, 0x44, 0xbc,
+	0x8b, 0x3d, 0x3b, 0x43, 0x8e, 0x57, 0x9a, 0xa4, 0x6d, 0xbd, 0x66, 0x5b, 0x33, 0x8c, 0xa8, 0x83,
+	0x3d, 0x33, 0xcc, 0x97, 0xa6, 0x64, 0xda, 0x1d, 0x42, 0x75, 0xcc, 0x1f, 0x4f, 0x16, 0xec, 0xc0,
+	0x36, 0xbb, 0x39, 0x77, 0x64, 0xcf, 0x3f, 0x85, 0xbd, 0x37, 0xa4, 0x0b, 0xbb, 0x32, 0x5a, 0xc2,
+	0xc7, 0xb0, 0x31, 0xce, 0x01, 0x37, 0x7b, 0xe5, 0x16, 0x7a, 0x12, 0xb2, 0x0b, 0x4c, 0xc8, 0xff,
+	0xed, 0x41, 0x6d, 0x5e, 0xc2, 0xad, 0x67, 0x08, 0x1b, 0xe1, 0x74, 0x61, 0x14, 0xb1, 0x93, 0x99,
+	0x88, 0xfd, 0x4d, 0xa0, 0x55, 0x40, 0x5d, 0xe6, 0x66, 0x24, 0xeb, 0x1c, 0xb6, 0x17, 0xd0, 0x16,
+	0xa4, 0xb0, 0x3d, 0x9d, 0xc2, 0x4a, 0xfb, 0x60, 0xc6, 0x44, 0xd1, 0xc1, 0x54, 0x46, 0x7f, 0x79,
+	0x50, 0xff, 0x98, 0xf5, 0x50, 0xd3, 0x3d, 0x06, 0xc5, 0x3a, 0xb0, 0x5e, 0x30, 0xfe, 0x4f, 0x2e,
+	0x8a, 0x57, 0x58, 0x13, 0xb6, 0xc2, 0x34, 0x1b, 0xf2, 0xef, 0x24, 0x53, 0x6e, 0x0d, 0x2a, 0x1b,
+	0xab, 0x55, 0x33, 0x94, 0x6c, 0xf8, 0x99, 0x64, 0xfa, 0xc9, 0xa2, 0xfe, 0x11, 0x3c, 0x58, 0x68,
+	0xf9, 0xce, 0xef, 0x46, 0x07, 0xf6, 0x03, 0x52, 0xf7, 0xdb, 0x87, 0x36, 0xd4, 0x17, 0x69, 0xdc,
+	0xd5, 0xb7, 0xbb, 0x62, 0x3f, 0xdf, 0x47, 0x7f, 0x02, 0x00, 0x00, 0xff, 0xff, 0xcc, 0x34, 0x98,
+	0x5c, 0xd5, 0x05, 0x00, 0x00,
 }

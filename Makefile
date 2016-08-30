@@ -8,16 +8,17 @@ MAKEFLAGS = -s
 # Since we are not using this Makefile for compilation, limiting parallelism will not increase build time.
 .NOTPARALLEL:
 
-.PHONY: all build test clean unit_test unit_test_cover unit_test_race integration_test proto proto_banner site_test site_integration_test docker_bootstrap docker_test docker_unit_test java_test php_test reshard_tests
+.PHONY: all build build_web test clean unit_test unit_test_cover unit_test_race integration_test proto proto_banner site_test site_integration_test docker_bootstrap docker_test docker_unit_test java_test php_test reshard_tests
 
-all: build test
+all: build build_web test
 
 # Set a custom value for -p, the number of packages to be built/tested in parallel.
 # This is currently only used by our Travis CI test configuration.
 # (Also keep in mind that this value is independent of GOMAXPROCS.)
-ifdef VT_GO_PARALLEL
-VT_GO_PARALLEL := "-p" $(VT_GO_PARALLEL)
+ifdef VT_GO_PARALLEL_VALUE
+export VT_GO_PARALLEL := -p $(VT_GO_PARALLEL_VALUE)
 endif
+
 # Link against the MySQL library in $VT_MYSQL_ROOT if it's specified.
 ifdef VT_MYSQL_ROOT
 # Clutter the env var only if it's a non-standard path.
@@ -25,6 +26,10 @@ ifdef VT_MYSQL_ROOT
     CGO_LDFLAGS += -L$(VT_MYSQL_ROOT)/lib
   endif
 endif
+
+build_web:
+	echo $$(date): Building web artifacts
+	cd web/vtctld2 && ng build -prod
 
 build:
 ifndef NOBANNER
@@ -145,7 +150,7 @@ php_proto:
 	docker rm vitess_php-proto
 
 # This rule builds the bootstrap images for all flavors.
-DOCKER_IMAGES_FOR_TEST = mariadb mysql56 mysql57 percona
+DOCKER_IMAGES_FOR_TEST = mariadb mysql56 mysql57 percona percona57
 DOCKER_IMAGES = common $(DOCKER_IMAGES_FOR_TEST)
 docker_bootstrap:
 	for i in $(DOCKER_IMAGES); do echo "image: $$i"; docker/bootstrap/build.sh $$i || exit 1; done
@@ -169,6 +174,10 @@ docker_base_percona:
 	chmod -R o=g *
 	docker build -f Dockerfile.percona -t vitess/base:percona .
 
+docker_base_percona57:
+	chmod -R o=g *
+	docker build -f Dockerfile.percona57 -t vitess/base:percona57 .
+
 docker_base_mariadb:
 	chmod -R o=g *
 	docker build -f Dockerfile.mariadb -t vitess/base:mariadb .
@@ -184,6 +193,9 @@ docker_lite_mariadb: docker_base_mariadb
 
 docker_lite_percona: docker_base_percona
 	cd docker/lite && ./build.sh percona
+
+docker_lite_percona57: docker_base_percona57
+	cd docker/lite && ./build.sh percona57
 
 docker_guestbook:
 	cd examples/kubernetes/guestbook && ./build.sh

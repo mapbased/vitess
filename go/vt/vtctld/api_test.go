@@ -11,11 +11,9 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/youtube/vitess/go/vt/discovery"
 	"github.com/youtube/vitess/go/vt/wrangler"
 	"github.com/youtube/vitess/go/vt/zktopo/zktestserver"
 
-	querypb "github.com/youtube/vitess/go/vt/proto/query"
 	topodatapb "github.com/youtube/vitess/go/vt/proto/topodata"
 )
 
@@ -81,29 +79,14 @@ func TestAPI(t *testing.T) {
 	realtimeStats := newRealtimeStatsForTesting()
 	initAPI(ctx, ts, actionRepo, realtimeStats)
 
-	target := &querypb.Target{
-		Keyspace:   "ks1",
-		Shard:      "-80",
-		TabletType: topodatapb.TabletType_REPLICA,
-	}
-	stats := &querypb.RealtimeStats{
-		HealthError:         "",
-		SecondsBehindMaster: 2,
-		BinlogPlayersCount:  0,
-		CpuUsage:            12.1,
-		Qps:                 5.6,
-	}
-	tabletStats := &discovery.TabletStats{
-		Key:     "key1",
-		Tablet:  &tablet1,
-		Target:  target,
-		Up:      true,
-		Serving: true,
-		TabletExternallyReparentedTimestamp: 5,
-		Stats:     stats,
-		LastError: nil,
-	}
-	realtimeStats.tabletStats.StatsUpdate(tabletStats)
+	ts1 := tabletStats("cell1", "ks1", "-80", topodatapb.TabletType_REPLICA, 100)
+	ts2 := tabletStats("cell1", "ks1", "-80-", topodatapb.TabletType_RDONLY, 200)
+	ts3 := tabletStats("cell2", "ks1", "80-", topodatapb.TabletType_REPLICA, 300)
+	ts4 := tabletStats("cell2", "ks1", "80-", topodatapb.TabletType_RDONLY, 400)
+	realtimeStats.StatsUpdate(ts1)
+	realtimeStats.StatsUpdate(ts2)
+	realtimeStats.StatsUpdate(ts3)
+	realtimeStats.StatsUpdate(ts4)
 
 	// Test cases.
 	table := []struct {
@@ -115,7 +98,8 @@ func TestAPI(t *testing.T) {
 		// Keyspaces
 		{"GET", "keyspaces", `["ks1"]`},
 		{"GET", "keyspaces/ks1", `{
-				"sharding_column_name": "shardcol"
+				"sharding_column_name": "shardcol",
+				"sharding_column_type": 0
 			}`},
 		{"POST", "keyspaces/ks1?action=TestKeyspaceAction", `{
 				"Name": "TestKeyspaceAction",
@@ -150,11 +134,14 @@ func TestAPI(t *testing.T) {
 			]`},
 		{"GET", "tablets/cell1-100", `{
 				"alias": {"cell": "cell1", "uid": 100},
+				"hostname": "",
+				"ip": "",
 				"port_map": {"vt": 100},
 				"keyspace": "ks1",
 				"shard": "-80",
 				"key_range": {"end": "gA=="},
-				"type": 2
+				"type": 2,
+				"db_name_override": ""
 			}`},
 		{"POST", "tablets/cell1-100?action=TestTabletAction", `{
 				"Name": "TestTabletAction",
@@ -163,12 +150,23 @@ func TestAPI(t *testing.T) {
 				"Error": false
 			}`},
 
-		//Tablet Updates
-		{"GET", "tablet_statuses/cell1/ks1/-80/REPLICA", `{"100":{"Key":"key1","Tablet":{"alias":{"cell":"cell1","uid":100},"port_map":{"vt":100},"keyspace":"ks1","shard":"-80","key_range":{"end":"gA=="},"type":2},"Name":"","Target":{"keyspace":"ks1","shard":"-80","tablet_type":2},"Up":true,"Serving":true,"TabletExternallyReparentedTimestamp":5,"Stats":{"seconds_behind_master":2,"cpu_usage":12.1,"qps":5.6},"LastError":null}}`},
-		{"GET", "tablet_statuses/cell1/ks1/replica", "can't get tablet_statuses: invalid target path: \"cell1/ks1/replica\"  expected path: <cell>/<keyspace>/<shard>/<type>"},
-		{"GET", "tablet_statuses/cell1/ks1/-80/hello", "can't get tablet_statuses: invalid tablet type: hello"},
-	}
+		// Tablet Updates
+		{"GET", "tablet_statuses/?keyspace=ks1&cell=cell1&type=REPLICA&metric=lag", `
+		   {"Labels":[{"Label":{"Name":"cell1","Rowspan":2},"NestedLabels":[{"Name":"REPLICA","Rowspan":1},{"Name":"RDONLY","Rowspan":1}]},
+		           {"Label":{"Name":"cell2","Rowspan":2},"NestedLabels":[{"Name":"REPLICA","Rowspan":1},{"Name":"RDONLY","Rowspan":1}]}],
+		           "Data":[[100,-1,-1],[-1,200,-1],[-1,-1,300],[-1,-1,400]],
+		           "Aliases":[[{"cell":"cell1","uid":100},null,null],[null,{"cell":"cell1","uid":200},null],[null,null,{"cell":"cell2","uid":300}],[null,null,{"cell":"cell2","uid":400}]]}
+		`},
+		{"GET", "tablet_statuses/cell1/REPLICA/lag", "can't get tablet_statuses: invalid target path: \"cell1/REPLICA/lag\"  expected path: ?keyspace=<keyspace>&cell=<cell>&type=<type>&metric=<metric>"},
+		{"GET", "tablet_statuses/?keyspace=ks1&cell=cell1&type=hello&metric=lag", "can't get tablet_statuses: invalid tablet type: hello"},
 
+		// Tablet Health
+		{"GET", "tablet_health/cell1/100", `{ "Key": "", "Tablet": { "alias": { "cell": "cell1", "uid": 100 },"port_map": { "vt": 100 }, "keyspace": "ks1", "shard": "-80", "type": 2},
+		  "Name": "", "Target": { "keyspace": "ks1", "shard": "-80", "tablet_type": 2 }, "Up": true, "Serving": true, "TabletExternallyReparentedTimestamp": 0,
+		  "Stats": { "seconds_behind_master": 100 }, "LastError": null }`},
+		{"GET", "tablet_health/cell1", "can't get tablet_health: invalid tablet_health path: \"cell1\"  expected path: /tablet_health/<cell>/<uid>"},
+		{"GET", "tablet_health/cell1/gh", "can't get tablet_health: incorrect uid: bad tablet uid strconv.ParseUint: parsing \"gh\": invalid syntax"},
+	}
 	for _, in := range table {
 		var resp *http.Response
 		var err error
@@ -199,7 +197,7 @@ func TestAPI(t *testing.T) {
 		got := compactJSON(body)
 		want := compactJSON([]byte(in.want))
 		if want == "" {
-			// want is no valid JSON. Fallback to a string comparison.
+			// want is not valid JSON. Fallback to a string comparison.
 			want = in.want
 			// For unknown reasons errors have a trailing "\n\t\t". Remove it.
 			got = strings.TrimSpace(string(body))

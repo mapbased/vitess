@@ -35,9 +35,9 @@ type RowAggregator struct {
 	td            *tabletmanagerdatapb.TableDefinition
 	diffType      DiffType
 	builder       QueryBuilder
-	// statsCounters has Counters to track how many rows were changed per
-	// diffType.
-	statsCounters []*stats.Counters
+	// statsCounters has a "diffType" specific stats.Counters object to track how
+	// many rows were changed per table.
+	statsCounters *stats.Counters
 
 	buffer       bytes.Buffer
 	bufferedRows int
@@ -47,7 +47,7 @@ type RowAggregator struct {
 // The index of the elements in statCounters must match the elements
 // in "DiffTypes" i.e. the first counter is for inserts, second for updates
 // and the third for deletes.
-func NewRowAggregator(ctx context.Context, maxRows, maxSize int, insertChannel chan string, dbName string, td *tabletmanagerdatapb.TableDefinition, diffType DiffType, statsCounters []*stats.Counters) *RowAggregator {
+func NewRowAggregator(ctx context.Context, maxRows, maxSize int, insertChannel chan string, dbName string, td *tabletmanagerdatapb.TableDefinition, diffType DiffType, statsCounters *stats.Counters) *RowAggregator {
 	// Construct head and tail base commands for the reconciliation statement.
 	var builder QueryBuilder
 	switch diffType {
@@ -64,10 +64,6 @@ func NewRowAggregator(ctx context.Context, maxRows, maxSize int, insertChannel c
 		builder = NewDeletesQueryBuilder(dbName, td)
 	default:
 		panic(fmt.Sprintf("unknown DiffType: %v", diffType))
-	}
-
-	if len(statsCounters) != len(DiffTypes) {
-		panic(fmt.Sprintf("statsCounter has the wrong number of elements. got = %v, want = %v", len(statsCounters), len(DiffTypes)))
 	}
 
 	return &RowAggregator{
@@ -121,7 +117,7 @@ func (ra *RowAggregator) Flush() error {
 	}
 
 	// Update our statistics.
-	ra.statsCounters[ra.diffType].Add(ra.td.Name, int64(ra.bufferedRows))
+	ra.statsCounters.Add(ra.td.Name, int64(ra.bufferedRows))
 
 	ra.buffer.Reset()
 	ra.bufferedRows = 0
@@ -178,7 +174,7 @@ func NewInsertsQueryBuilder(dbName string, td *tabletmanagerdatapb.TableDefiniti
 	// Example: INSERT INTO test (id, sub_id, msg) VALUES (0, 10, 'a'), (1, 11, 'b')
 	return &InsertsQueryBuilder{
 		BaseQueryBuilder{
-			head:      "INSERT INTO `" + dbName + "`." + td.Name + " (" + strings.Join(td.Columns, ", ") + ") VALUES ",
+			head:      "INSERT INTO " + escape(dbName) + "." + escape(td.Name) + " (" + strings.Join(escapeAll(td.Columns), ", ") + ") VALUES ",
 			separator: ",",
 		},
 	}
@@ -218,7 +214,7 @@ func NewUpdatesQueryBuilder(dbName string, td *tabletmanagerdatapb.TableDefiniti
 	// and not the primary key).
 	return &UpdatesQueryBuilder{
 		BaseQueryBuilder: BaseQueryBuilder{
-			head: "UPDATE `" + dbName + "`." + td.Name + " SET ",
+			head: "UPDATE " + escape(dbName) + "." + escape(td.Name) + " SET ",
 		},
 		td: td,
 		// Build list of non-primary key columns (required for update statements).
@@ -240,7 +236,7 @@ func (b *UpdatesQueryBuilder) WriteRow(buffer *bytes.Buffer, row []sqltypes.Valu
 		if i > 0 {
 			buffer.WriteByte(',')
 		}
-		buffer.WriteString(column)
+		writeEscaped(buffer, column)
 		buffer.WriteByte('=')
 		row[nonPrimaryOffset+i].EncodeSQL(buffer)
 	}
@@ -249,7 +245,7 @@ func (b *UpdatesQueryBuilder) WriteRow(buffer *bytes.Buffer, row []sqltypes.Valu
 		if i > 0 {
 			buffer.WriteString(" AND ")
 		}
-		buffer.WriteString(pkColumn)
+		writeEscaped(buffer, pkColumn)
 		buffer.WriteByte('=')
 		row[i].EncodeSQL(buffer)
 	}
@@ -270,7 +266,7 @@ func NewDeletesQueryBuilder(dbName string, td *tabletmanagerdatapb.TableDefiniti
 	// for such a query. (We haven't confirmed this ourselves.)
 	return &DeletesQueryBuilder{
 		BaseQueryBuilder: BaseQueryBuilder{
-			head:      "DELETE FROM `" + dbName + "`." + td.Name + " WHERE ",
+			head:      "DELETE FROM " + escape(dbName) + "." + escape(td.Name) + " WHERE ",
 			separator: " OR ",
 		},
 		td: td,
@@ -285,7 +281,7 @@ func (b *DeletesQueryBuilder) WriteRow(buffer *bytes.Buffer, row []sqltypes.Valu
 		if i > 0 {
 			buffer.WriteString(" AND ")
 		}
-		buffer.WriteString(pkColumn)
+		writeEscaped(buffer, pkColumn)
 		buffer.WriteByte('=')
 		row[i].EncodeSQL(buffer)
 	}

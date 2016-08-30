@@ -1,6 +1,7 @@
 package vtctld
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -12,15 +13,21 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
+	"github.com/golang/protobuf/jsonpb"
+	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/context"
 
+	"github.com/youtube/vitess/go/acl"
 	"github.com/youtube/vitess/go/vt/logutil"
-	logutilpb "github.com/youtube/vitess/go/vt/proto/logutil"
 	"github.com/youtube/vitess/go/vt/schemamanager"
 	"github.com/youtube/vitess/go/vt/tabletmanager/tmclient"
 	"github.com/youtube/vitess/go/vt/topo"
 	"github.com/youtube/vitess/go/vt/topo/topoproto"
+	"github.com/youtube/vitess/go/vt/vtctl"
 	"github.com/youtube/vitess/go/vt/wrangler"
+
+	logutilpb "github.com/youtube/vitess/go/vt/proto/logutil"
+	topodatapb "github.com/youtube/vitess/go/vt/proto/topodata"
 )
 
 var (
@@ -62,10 +69,42 @@ func handleCollection(collection string, getFunc func(*http.Request) (interface{
 		}
 
 		// JSON encode response.
-		data, err := json.MarshalIndent(obj, "", "  ")
-		if err != nil {
-			httpErrorf(w, r, "json error: %v", err)
-			return
+		var data []byte
+		switch obj := obj.(type) {
+		case proto.Message:
+			// We use jsonpb for protobuf messages because it is the only supported
+			// way to marshal protobuf messages to JSON.
+			// In addition to that, it's the only way to emit zero values in the JSON
+			// output.
+			// Unfortunately, it works only for protobuf messages. Therefore, we use
+			// the default marshaler for the remaining structs (which are possibly
+			// mixed protobuf and non-protobuf).
+			// TODO(mberlin): Switch "EnumAsInts" to "false" once the frontend is
+			//                updated and mixed types will use jsonpb as well.
+
+			// jsonpb may panic if the "proto.Message" is an embedded field
+			// of "obj" and "obj" has non-exported fields. Return an error then.
+			defer func() {
+				if val := recover(); val != nil {
+					httpErrorf(w, r, "jsonpb panicked: %v", val)
+					return
+				}
+			}()
+
+			// Marshal the protobuf message.
+			var b bytes.Buffer
+			m := jsonpb.Marshaler{EnumsAsInts: true, EmitDefaults: true, Indent: "  ", OrigName: true}
+			if err := m.Marshal(&b, obj); err != nil {
+				httpErrorf(w, r, "jsonpb error: %v", err)
+				return
+			}
+			data = b.Bytes()
+		default:
+			data, err = json.MarshalIndent(obj, "", "  ")
+			if err != nil {
+				httpErrorf(w, r, "json error: %v", err)
+				return
+			}
 		}
 		w.Header().Set("Content-Type", jsonContentType)
 		w.Write(data)
@@ -119,26 +158,33 @@ func initAPI(ctx context.Context, ts topo.Server, actions *ActionRepository, rea
 	// Keyspaces
 	handleCollection("keyspaces", func(r *http.Request) (interface{}, error) {
 		keyspace := getItemPath(r.URL.Path)
-
-		// List all keyspaces.
-		if keyspace == "" {
-			return ts.GetKeyspaces(ctx)
-		}
-
-		// Perform an action on a keyspace.
-		if r.Method == "POST" {
+		switch r.Method {
+		case "GET":
+			// List all keyspaces.
+			if keyspace == "" {
+				return ts.GetKeyspaces(ctx)
+			}
+			// Get the keyspace record.
+			k, err := ts.GetKeyspace(ctx, keyspace)
+			// Pass the embedded proto directly or jsonpb will panic.
+			return k.Keyspace, err
+			// Perform an action on a keyspace.
+		case "POST":
+			if keyspace == "" {
+				return nil, errors.New("A POST request needs a keyspace in the URL")
+			}
 			if err := r.ParseForm(); err != nil {
 				return nil, err
 			}
+
 			action := r.FormValue("action")
 			if action == "" {
-				return nil, errors.New("must specify action")
+				return nil, errors.New("A POST request must specify action")
 			}
 			return actions.ApplyKeyspaceAction(ctx, action, keyspace, r), nil
+		default:
+			return nil, fmt.Errorf("unsupported HTTP method: %v", r.Method)
 		}
-
-		// Get the keyspace record.
-		return ts.GetKeyspace(ctx, keyspace)
 	})
 
 	// Shards
@@ -169,7 +215,9 @@ func initAPI(ctx context.Context, ts topo.Server, actions *ActionRepository, rea
 		}
 
 		// Get the shard record.
-		return ts.GetShard(ctx, keyspace, shard)
+		si, err := ts.GetShard(ctx, keyspace, shard)
+		// Pass the embedded proto directly or jsonpb will panic.
+		return si.Shard, err
 	})
 
 	// SrvKeyspace
@@ -275,34 +323,114 @@ func initAPI(ctx context.Context, ts topo.Server, actions *ActionRepository, rea
 		}
 
 		// Get the tablet record.
-		return ts.GetTablet(ctx, tabletAlias)
+		t, err := ts.GetTablet(ctx, tabletAlias)
+		// Pass the embedded proto directly or jsonpb will panic.
+		return t.Tablet, err
 	})
 
-	// Healthcheck real time status per (cell, keyspace, shard, tablet type).
+	// Healthcheck real time status per (cell, keyspace, tablet type, metric).
 	handleCollection("tablet_statuses", func(r *http.Request) (interface{}, error) {
 		targetPath := getItemPath(r.URL.Path)
-		parts := strings.SplitN(targetPath, "/", 4)
-		if len(parts) != 4 {
-			return nil, fmt.Errorf("invalid target path: %q  expected path: <cell>/<keyspace>/<shard>/<type>", targetPath)
+
+		// Get the heatmap data based on query parameters.
+		if targetPath == "" {
+			if err := r.ParseForm(); err != nil {
+				return nil, err
+			}
+			keyspace := r.FormValue("keyspace")
+			cell := r.FormValue("cell")
+			tabletType := r.FormValue("type")
+			_, err := topoproto.ParseTabletType(tabletType)
+			if err != nil {
+				return nil, fmt.Errorf("invalid tablet type: %v ", tabletType)
+			}
+			metric := r.FormValue("metric")
+
+			if realtimeStats == nil {
+				return nil, fmt.Errorf("realtimeStats not initialized")
+			}
+
+			heatmap, err := realtimeStats.heatmapData(keyspace, cell, tabletType, metric)
+			if err != nil {
+				return nil, fmt.Errorf("couldn't get heatmap data: %v", err)
+			}
+			return heatmap, nil
+		}
+
+		return nil, fmt.Errorf("invalid target path: %q  expected path: ?keyspace=<keyspace>&cell=<cell>&type=<type>&metric=<metric>", targetPath)
+	})
+
+	handleCollection("tablet_health", func(r *http.Request) (interface{}, error) {
+		tabletPath := getItemPath(r.URL.Path)
+		parts := strings.SplitN(tabletPath, "/", 2)
+
+		// Request was incorrectly formatted.
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid tablet_health path: %q  expected path: /tablet_health/<cell>/<uid>", tabletPath)
+		}
+
+		if realtimeStats == nil {
+			return nil, fmt.Errorf("realtimeStats not initialized")
 		}
 
 		cell := parts[0]
-		keyspace := parts[1]
-		shard := parts[2]
-		tabletType := parts[3]
-		tabletTypeObj, err := topoproto.ParseTabletType(tabletType)
+		uidStr := parts[1]
+		uid, err := topoproto.ParseUID(uidStr)
 		if err != nil {
-			return nil, fmt.Errorf("invalid tablet type: %v ", tabletType)
+			return nil, fmt.Errorf("incorrect uid: %v", err)
 		}
-		if realtimeStats == nil {
-			return nil, nil
+
+		tabletAlias := topodatapb.TabletAlias{
+			Cell: cell,
+			Uid:  uid,
 		}
-		allUpdates := realtimeStats.tabletStatuses(cell, keyspace, shard, tabletTypeObj.String())
-		return allUpdates, nil
+		tabletStat, err := realtimeStats.tabletStats(&tabletAlias)
+		if err != nil {
+			return nil, fmt.Errorf("could not get tabletStats: %v", err)
+		}
+		return tabletStat, nil
+	})
+
+	// Vtctl Command
+	http.HandleFunc(apiPrefix+"vtctl/", func(w http.ResponseWriter, r *http.Request) {
+		if err := acl.CheckAccessHTTP(r, acl.ADMIN); err != nil {
+			httpErrorf(w, r, "Access denied")
+			return
+		}
+		var args []string
+		resp := struct {
+			Error  string
+			Output string
+		}{}
+		if err := unmarshalRequest(r, &args); err != nil {
+			httpErrorf(w, r, "can't unmarshal request: %v", err)
+			return
+		}
+
+		logstream := logutil.NewMemoryLogger()
+
+		wr := wrangler.New(logstream, ts, tmClient)
+		// TODO(enisoc): Context for run command should be request-scoped.
+		err := vtctl.RunCommand(ctx, wr, args)
+		if err != nil {
+			resp.Error = err.Error()
+		}
+		resp.Output = logstream.String()
+		data, err := json.MarshalIndent(resp, "", "  ")
+		if err != nil {
+			httpErrorf(w, r, "json error: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", jsonContentType)
+		w.Write(data)
 	})
 
 	// Schema Change
 	http.HandleFunc(apiPrefix+"schema/apply", func(w http.ResponseWriter, r *http.Request) {
+		if err := acl.CheckAccessHTTP(r, acl.ADMIN); err != nil {
+			httpErrorf(w, r, "Access denied")
+			return
+		}
 		req := struct {
 			Keyspace, SQL       string
 			SlaveTimeoutSeconds int

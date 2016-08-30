@@ -7,11 +7,11 @@ html, body {
 }
 
 .flex-column {
-  display: flex;
-  flex-direction: column;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
-.flex-grow {
+.flex-grow, md-sidenav-layout > md-content {
   flex-grow: 1;
 }
 

@@ -7,6 +7,7 @@ package worker
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/youtube/vitess/go/vt/discovery"
@@ -36,7 +37,7 @@ func NewTabletTracker() *TabletTracker {
 // Track will pick the least used tablet from "stats", increment its usage by 1
 // and return it.
 // "stats" must not be empty.
-func (t *TabletTracker) Track(stats []discovery.TabletStats) *topodata.TabletAlias {
+func (t *TabletTracker) Track(stats []discovery.TabletStats) *topodata.Tablet {
 	if len(stats) == 0 {
 		panic("stats must not be empty")
 	}
@@ -48,7 +49,7 @@ func (t *TabletTracker) Track(stats []discovery.TabletStats) *topodata.TabletAli
 		key := topoproto.TabletAliasString(stat.Tablet.Alias)
 		if _, ok := t.usedTablets[key]; !ok {
 			t.usedTablets[key] = 1
-			return stat.Tablet.Alias
+			return stat.Tablet
 		}
 	}
 
@@ -59,7 +60,7 @@ func (t *TabletTracker) Track(stats []discovery.TabletStats) *topodata.TabletAli
 			key := topoproto.TabletAliasString(stat.Tablet.Alias)
 			if key == aliasString {
 				t.usedTablets[key]++
-				return stat.Tablet.Alias
+				return stat.Tablet
 			}
 		}
 	}
@@ -82,6 +83,20 @@ func (t *TabletTracker) Untrack(alias *topodata.TabletAlias) {
 	} else {
 		t.usedTablets[key] = count
 	}
+}
+
+// TabletsInUse returns a string of all tablet aliases currently in use.
+// The tablets are separated by a space.
+func (t *TabletTracker) TabletsInUse() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	var aliases []string
+	for alias := range t.usedTablets {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	return strings.Join(aliases, " ")
 }
 
 func (t *TabletTracker) tabletsByUsage() []string {

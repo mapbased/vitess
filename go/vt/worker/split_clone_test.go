@@ -10,16 +10,19 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/youtube/vitess/go/sqltypes"
+	"github.com/youtube/vitess/go/vt/concurrency"
 	"github.com/youtube/vitess/go/vt/mysqlctl/replication"
 	"github.com/youtube/vitess/go/vt/mysqlctl/tmutils"
 	"github.com/youtube/vitess/go/vt/tabletmanager/tmclient"
 	"github.com/youtube/vitess/go/vt/tabletserver/grpcqueryservice"
 	"github.com/youtube/vitess/go/vt/tabletserver/queryservice/fakes"
 	"github.com/youtube/vitess/go/vt/topo"
+	"github.com/youtube/vitess/go/vt/topo/topoproto"
 	"github.com/youtube/vitess/go/vt/vttest/fakesqldb"
 	"github.com/youtube/vitess/go/vt/wrangler/testlib"
 	"github.com/youtube/vitess/go/vt/zktopo/zktestserver"
@@ -36,6 +39,8 @@ const (
 	splitCloneTestMin int = 100
 	// splitCloneTestMax is the maximum value of the primary key.
 	splitCloneTestMax int = 200
+	// In the default test case there are 100 rows on the source.
+	splitCloneTestRowsCount = splitCloneTestMax - splitCloneTestMin
 )
 
 var (
@@ -77,13 +82,10 @@ type splitCloneTestCase struct {
 }
 
 func (tc *splitCloneTestCase) setUp(v3 bool) {
-	tc.setUpWithConcurreny(v3, 10, 2)
+	tc.setUpWithConcurreny(v3, 10, 2, splitCloneTestRowsCount)
 }
 
-func (tc *splitCloneTestCase) setUpWithConcurreny(v3 bool, concurrency, writeQueryMaxRows int) {
-	// In the default test case there are 100 rows on the source.
-	rowsTotal := 100
-
+func (tc *splitCloneTestCase) setUpWithConcurreny(v3 bool, concurrency, writeQueryMaxRows, rowsCount int) {
 	*useV3ReshardingMode = v3
 	db := fakesqldb.Register()
 	tc.ts = zktestserver.New(tc.t, []string{"cell1", "cell2"})
@@ -181,13 +183,14 @@ func (tc *splitCloneTestCase) setUpWithConcurreny(v3 bool, concurrency, writeQue
 					Columns:           []string{"msg", "keyspace_id", "id"},
 					PrimaryKeyColumns: []string{"id"},
 					Type:              tmutils.TableBaseTable,
-					// Set the table size to a value higher than --min_table_size_for_split.
-					DataLength: 2048,
+					// Set the row count to avoid that --min_rows_per_chunk reduces the
+					// number of chunks.
+					RowCount: uint64(rowsCount),
 				},
 			},
 		}
 		sourceRdonly.FakeMysqlDaemon.DbAppConnectionFactory = sourceRdonlyFactory(
-			tc.t, "vt_ks.table1", splitCloneTestMin, splitCloneTestMax)
+			tc.t, "vt_ks", "table1", splitCloneTestMin, splitCloneTestMax)
 		sourceRdonly.FakeMysqlDaemon.CurrentMasterPosition = replication.Position{
 			GTIDSet: replication.MariadbGTID{Domain: 12, Server: 34, Sequence: 5678},
 		}
@@ -197,8 +200,8 @@ func (tc *splitCloneTestCase) setUpWithConcurreny(v3 bool, concurrency, writeQue
 		}
 		shqs := fakes.NewStreamHealthQueryService(sourceRdonly.Target())
 		shqs.AddDefaultHealthResponse()
-		qs := newTestQueryService(tc.t, sourceRdonly.Target(), shqs, 0, 1, sourceRdonly.Tablet.Alias.Uid)
-		qs.addGeneratedRows(100, 100+rowsTotal)
+		qs := newTestQueryService(tc.t, sourceRdonly.Target(), shqs, 0, 1, topoproto.TabletAliasString(sourceRdonly.Tablet.Alias), false /* omitKeyspaceID */)
+		qs.addGeneratedRows(100, 100+rowsCount)
 		grpcqueryservice.Register(sourceRdonly.RPCServer, qs)
 		tc.sourceRdonlyQs = append(tc.sourceRdonlyQs, qs)
 	}
@@ -206,7 +209,7 @@ func (tc *splitCloneTestCase) setUpWithConcurreny(v3 bool, concurrency, writeQue
 	for i, destRdonly := range []*testlib.FakeTablet{leftRdonly1, rightRdonly1, leftRdonly2, rightRdonly2} {
 		shqs := fakes.NewStreamHealthQueryService(destRdonly.Target())
 		shqs.AddDefaultHealthResponse()
-		qs := newTestQueryService(tc.t, destRdonly.Target(), shqs, i%2, 2, destRdonly.Tablet.Alias.Uid)
+		qs := newTestQueryService(tc.t, destRdonly.Target(), shqs, i%2, 2, topoproto.TabletAliasString(destRdonly.Tablet.Alias), false /* omitKeyspaceID */)
 		grpcqueryservice.Register(destRdonly.RPCServer, qs)
 		if i%2 == 0 {
 			tc.leftRdonlyQs = append(tc.leftRdonlyQs, qs)
@@ -221,16 +224,16 @@ func (tc *splitCloneTestCase) setUpWithConcurreny(v3 bool, concurrency, writeQue
 
 	// In the default test case there will be 30 inserts per destination shard
 	// because 10 writer threads will insert 5 rows on each destination shard.
-	// (100 source rows / 10 writers / 2 shards = 5 rows.)
+	// (100 rowsCount / 10 writers / 2 shards = 5 rows.)
 	// Due to --write_query_max_rows=2 there will be 3 inserts for 5 rows.
-	rowsPerDestinationShard := rowsTotal / 2
+	rowsPerDestinationShard := rowsCount / 2
 	rowsPerThread := rowsPerDestinationShard / concurrency
 	insertsPerThread := math.Ceil(float64(rowsPerThread) / float64(writeQueryMaxRows))
 	insertsTotal := int(insertsPerThread) * concurrency
 	for i := 1; i <= insertsTotal; i++ {
-		tc.leftMasterFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.table1 (id, msg, keyspace_id) VALUES (*", nil)
+		tc.leftMasterFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.`table1` (`id`, `msg`, `keyspace_id`) VALUES (*", nil)
 		// leftReplica is unused by default.
-		tc.rightMasterFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.table1 (id, msg, keyspace_id) VALUES (*", nil)
+		tc.rightMasterFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.`table1` (`id`, `msg`, `keyspace_id`) VALUES (*", nil)
 	}
 	expectBlpCheckpointCreationQueries(tc.leftMasterFakeDb)
 	expectBlpCheckpointCreationQueries(tc.rightMasterFakeDb)
@@ -258,8 +261,9 @@ func (tc *splitCloneTestCase) setUpWithConcurreny(v3 bool, concurrency, writeQue
 		// the rate limit is set very high.
 		"-max_tps", "9999",
 		"-write_query_max_rows", strconv.Itoa(writeQueryMaxRows),
+		"-chunk_count", strconv.Itoa(concurrency),
+		"-min_rows_per_chunk", strconv.Itoa(rowsPerThread),
 		"-source_reader_count", strconv.Itoa(concurrency),
-		"-min_table_size_for_split", "1",
 		"-destination_writer_count", strconv.Itoa(concurrency),
 		"ks/-80"}
 }
@@ -282,58 +286,78 @@ type testQueryService struct {
 	*fakes.StreamHealthQueryService
 	shardIndex int
 	shardCount int
-	tabletUID  uint32
-	fields     []*querypb.Field
-	rows       [][]sqltypes.Value
+	alias      string
+	// omitKeyspaceID is true when the returned rows should not contain the
+	// "keyspace_id" column.
+	omitKeyspaceID bool
+	fields         []*querypb.Field
+	rows           [][]sqltypes.Value
+
+	// mu guards the fields in this group.
+	// It is necessary because multiple Go routines will read from the same
+	// tablet.
+	mu sync.Mutex
 	// forceError is set to true for a given int64 primary key value if
 	// testQueryService should return an error instead of the actual row.
-	forceError map[int64]bool
+	forceError map[int64]int
+	// errorCallback is run once after the first error is returned.
+	errorCallback func()
 }
 
-func newTestQueryService(t *testing.T, target querypb.Target, shqs *fakes.StreamHealthQueryService, shardIndex, shardCount int, tabletUID uint32) *testQueryService {
+func newTestQueryService(t *testing.T, target querypb.Target, shqs *fakes.StreamHealthQueryService, shardIndex, shardCount int, alias string, omitKeyspaceID bool) *testQueryService {
+	fields := v2Fields
+	if omitKeyspaceID {
+		fields = v3Fields
+	}
 	return &testQueryService{
 		t:      t,
 		target: target,
 		StreamHealthQueryService: shqs,
 		shardIndex:               shardIndex,
 		shardCount:               shardCount,
-		tabletUID:                tabletUID,
-		fields:                   v2Fields,
-		forceError:               make(map[int64]bool),
+		alias:                    alias,
+		omitKeyspaceID:           omitKeyspaceID,
+		fields:                   fields,
+		forceError:               make(map[int64]int),
 	}
 }
 
 func (sq *testQueryService) StreamExecute(ctx context.Context, target *querypb.Target, sql string, bindVariables map[string]interface{}, sendReply func(reply *sqltypes.Result) error) error {
 	// Custom parsing of the query we expect.
-	// Example: SELECT id, msg, keyspace_id FROM table1 WHERE id>=180 AND id<190 ORDER BY id
+	// Example: SELECT `id`, `msg`, `keyspace_id` FROM table1 WHERE id>=180 AND id<190 ORDER BY id
 	min := math.MinInt32
 	max := math.MaxInt32
 	var err error
 	parts := strings.Split(sql, " ")
 	for _, part := range parts {
-		if strings.HasPrefix(part, "id>=") {
+		if strings.HasPrefix(part, "`id`>=") {
 			// Chunk start.
-			min, err = strconv.Atoi(part[4:])
+			min, err = strconv.Atoi(part[6:])
 			if err != nil {
 				return err
 			}
-		} else if strings.HasPrefix(part, "id>") {
+		} else if strings.HasPrefix(part, "`id`>") {
 			// Chunk start after restart.
-			min, err = strconv.Atoi(part[3:])
+			min, err = strconv.Atoi(part[5:])
 			if err != nil {
 				return err
 			}
 			// Increment by one to fulfill ">" instead of ">=".
 			min++
-		} else if strings.HasPrefix(part, "id<") {
+		} else if strings.HasPrefix(part, "`id`<") {
 			// Chunk end.
-			max, err = strconv.Atoi(part[3:])
+			max, err = strconv.Atoi(part[5:])
 			if err != nil {
 				return err
 			}
 		}
 	}
-	sq.t.Logf("testQueryService: %v,%v/%v/%v: got query: %v with min %v max (exclusive) %v", sq.tabletUID, sq.target.Keyspace, sq.target.Shard, sq.target.TabletType, sql, min, max)
+	sq.t.Logf("testQueryService: %v,%v/%v/%v: got query: %v with min %v max (exclusive) %v", sq.alias, sq.target.Keyspace, sq.target.Shard, sq.target.TabletType, sql, min, max)
+
+	if sq.forceErrorOnce(int64(min)) {
+		sq.t.Logf("testQueryService: %v,%v/%v/%v: sending error for id: %v before sending the fields", sq.alias, sq.target.Keyspace, sq.target.Shard, sq.target.TabletType, min)
+		return errStreamingQueryTimeout
+	}
 
 	// Send the headers.
 	if err := sendReply(&sqltypes.Result{Fields: sq.fields}); err != nil {
@@ -346,10 +370,8 @@ func (sq *testQueryService) StreamExecute(ctx context.Context, target *querypb.T
 		primaryKey := row[0].ToNative().(int64)
 
 		if primaryKey >= int64(min) && primaryKey < int64(max) {
-			if sq.forceError[primaryKey] {
-				// Do not react on the error again.
-				delete(sq.forceError, primaryKey)
-				sq.t.Logf("testQueryService: %v,%v/%v/%v: sending error for id: %v row: %v", sq.tabletUID, sq.target.Keyspace, sq.target.Shard, sq.target.TabletType, primaryKey, row)
+			if sq.forceErrorOnce(primaryKey) {
+				sq.t.Logf("testQueryService: %v,%v/%v/%v: sending error for id: %v row: %v", sq.alias, sq.target.Keyspace, sq.target.Shard, sq.target.TabletType, primaryKey, row)
 				return errStreamingQueryTimeout
 			}
 
@@ -359,13 +381,13 @@ func (sq *testQueryService) StreamExecute(ctx context.Context, target *querypb.T
 				return err
 			}
 			// Uncomment the next line during debugging when needed.
-			//			sq.t.Logf("testQueryService: %v,%v/%v/%v: sent row for id: %v row: %v", sq.tabletUID, sq.target.Keyspace, sq.target.Shard, sq.target.TabletType, primaryKey, row)
+			//			sq.t.Logf("testQueryService: %v,%v/%v/%v: sent row for id: %v row: %v", sq.alias, sq.target.Keyspace, sq.target.Shard, sq.target.TabletType, primaryKey, row)
 			rowsAffected++
 		}
 	}
 
 	if rowsAffected == 0 {
-		sq.t.Logf("testQueryService: %v,%v/%v/%v: no rows were sent (%v are available)", sq.tabletUID, sq.target.Keyspace, sq.target.Shard, sq.target.TabletType, len(sq.rows))
+		sq.t.Logf("testQueryService: %v,%v/%v/%v: no rows were sent (%v are available)", sq.alias, sq.target.Keyspace, sq.target.Shard, sq.target.TabletType, len(sq.rows))
 	}
 	return nil
 }
@@ -382,11 +404,15 @@ func (sq *testQueryService) addGeneratedRows(from, to int) {
 		shardIndex := id % 2
 		if sq.shardCount == 1 || shardIndex == sq.shardIndex {
 			idValue, _ := sqltypes.BuildValue(int64(id))
-			rows = append(rows, []sqltypes.Value{
+
+			row := []sqltypes.Value{
 				idValue,
 				sqltypes.MakeString([]byte(fmt.Sprintf("Text for %v", id))),
-				sqltypes.MakeString([]byte(fmt.Sprintf("%v", ksids[shardIndex]))),
-			})
+			}
+			if !sq.omitKeyspaceID {
+				row = append(row, sqltypes.MakeString([]byte(fmt.Sprintf("%v", ksids[shardIndex]))))
+			}
+			rows = append(rows, row)
 		}
 	}
 
@@ -409,8 +435,35 @@ func (sq *testQueryService) clearRows() {
 	sq.rows = nil
 }
 
-func (sq *testQueryService) errorStreamAtRow(primaryKeyValue int) {
-	sq.forceError[int64(primaryKeyValue)] = true
+func (sq *testQueryService) errorStreamAtRow(primaryKey, times int) {
+	sq.mu.Lock()
+	defer sq.mu.Unlock()
+
+	sq.forceError[int64(primaryKey)] = times
+}
+
+// setErrorCallback registers a function which will be called when the first
+// error is injected. It will be run only once.
+func (sq *testQueryService) setErrorCallback(cb func()) {
+	sq.mu.Lock()
+	defer sq.mu.Unlock()
+
+	sq.errorCallback = cb
+}
+
+func (sq *testQueryService) forceErrorOnce(primaryKey int64) bool {
+	sq.mu.Lock()
+	defer sq.mu.Unlock()
+
+	force := sq.forceError[primaryKey] > 0
+	if force {
+		sq.forceError[primaryKey]--
+		if sq.errorCallback != nil {
+			sq.errorCallback()
+			sq.errorCallback = nil
+		}
+	}
+	return force
 }
 
 var v2Fields = []*querypb.Field{
@@ -422,10 +475,21 @@ var v2Fields = []*querypb.Field{
 		Name: "msg",
 		Type: sqltypes.VarChar,
 	},
-	// TODO(mberlin): Omit keyspace_id in the v3 test.
 	{
 		Name: "keyspace_id",
 		Type: sqltypes.Int64,
+	},
+}
+
+// v3Fields is identical to v2Fields but lacks the "keyspace_id" column.
+var v3Fields = []*querypb.Field{
+	{
+		Name: "id",
+		Type: sqltypes.Int64,
+	},
+	{
+		Name: "msg",
+		Type: sqltypes.VarChar,
 	},
 }
 
@@ -441,6 +505,30 @@ func TestSplitCloneV2_Offline(t *testing.T) {
 	}
 }
 
+// TestSplitCloneV2_Offline_HighChunkCount is identical to
+// TestSplitCloneV2_Offline but sets the --chunk_count to 1000. Given
+// --source_reader_count=10, at most 10 out of the 1000 chunk pipeplines will
+// get processed concurrently while the other pending ones are blocked.
+func TestSplitCloneV2_Offline_HighChunkCount(t *testing.T) {
+	tc := &splitCloneTestCase{t: t}
+	tc.setUpWithConcurreny(false /* v3 */, 10, 5 /* writeQueryMaxRows */, 1000 /* rowsCount */)
+	defer tc.tearDown()
+
+	args := make([]string, len(tc.defaultWorkerArgs))
+	copy(args, tc.defaultWorkerArgs)
+	// Set -write_query_max_rows to 5.
+	args[5] = "5"
+	// Set -chunk_count to 1000.
+	args[7] = "1000"
+	// Set -min_rows_per_chunk to 5.
+	args[9] = "5"
+
+	// Run the vtworker command.
+	if err := runCommand(t, tc.wi, tc.wi.wr, args); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestSplitCloneV2_Offline_RestartStreamingQuery is identical to
 // TestSplitCloneV2_Offline but forces SplitClone to restart the streaming
 // query on the source before reading the last row.
@@ -449,16 +537,181 @@ func TestSplitCloneV2_Offline_RestartStreamingQuery(t *testing.T) {
 	tc.setUp(false /* v3 */)
 	defer tc.tearDown()
 
+	// Ensure that this test uses only the first tablet. This makes it easier
+	// to verify that the restart actually happened for that tablet.
+	// SplitClone will ignore the second tablet because we set its replication lag
+	// to 1h.
+	tc.sourceRdonlyQs[1].AddHealthResponseWithSecondsBehindMaster(3600)
+
 	// TODO(mberlin): Change this test to use a multi-column primary key because
 	// the restart generates a WHERE clause which includes all primary key
 	// columns.
-	for _, qs := range tc.sourceRdonlyQs {
-		qs.errorStreamAtRow(199)
-	}
+	// We fail when returning the last row to ensure that there is only one thread
+	// left reading from the source tablet.
+	tc.sourceRdonlyQs[0].errorStreamAtRow(199, 1)
 
 	// Run the vtworker command.
-	if err := runCommand(t, tc.wi, tc.wi.wr, tc.defaultWorkerArgs); err != nil {
+	// We require only 1 instead of the default 2 replicas.
+	args := []string{"SplitClone", "--min_healthy_rdonly_tablets", "1"}
+	args = append(args, tc.defaultWorkerArgs[1:]...)
+	if err := runCommand(t, tc.wi, tc.wi.wr, args); err != nil {
 		t.Fatal(err)
+	}
+
+	alias := tc.sourceRdonlyQs[0].alias
+	if got, want := statsStreamingQueryErrorsCounters.Counts()[alias], int64(1); got != want {
+		t.Errorf("wrong number of errored streaming query for tablet: %v: got = %v, want = %v", alias, got, want)
+	}
+	if got, want := statsStreamingQueryCounters.Counts()[alias], int64(11); got != want {
+		t.Errorf("wrong number of streaming query starts for tablet: %v: got = %v, want = %v", alias, got, want)
+	}
+}
+
+// TestSplitCloneV2_Offline_FailOverStreamingQuery_NotAllowed is similar to
+// TestSplitCloneV2_Offline_RestartStreamingQuery. However, the first restart
+// of the streaming query does not succeed here and instead vtworker will fail.
+func TestSplitCloneV2_Offline_FailOverStreamingQuery_NotAllowed(t *testing.T) {
+	tc := &splitCloneTestCase{t: t}
+	tc.setUpWithConcurreny(false /* v3 */, 1, 10, splitCloneTestRowsCount)
+	defer tc.tearDown()
+
+	// Ensure that this test uses only the first tablet.
+	tc.sourceRdonlyQs[1].AddHealthResponseWithSecondsBehindMaster(3600)
+
+	// We fail when returning the last row to ensure that vtworker is forced to
+	// give up after the one allowed restart.
+	tc.sourceRdonlyQs[0].errorStreamAtRow(199, 1234567890 /* infinite */)
+
+	// vtworker fails due to the read error and may write less than all but the
+	// last errored error. We cannot reliably expect any number of written rows.
+	defer tc.leftMasterFakeDb.deleteAllEntries()
+	defer tc.rightMasterFakeDb.deleteAllEntries()
+
+	// Run the vtworker command.
+	args := []string{"SplitClone", "--min_healthy_rdonly_tablets", "1"}
+	args = append(args, tc.defaultWorkerArgs[1:]...)
+	if err := runCommand(t, tc.wi, tc.wi.wr, args); err == nil || !strings.Contains(err.Error(), "first retry to restart the streaming query on the same tablet failed. We're failing at this point") {
+		t.Fatalf("worker should have failed because all tablets became unavailable and it gave up retrying. err: %v", err)
+	}
+
+	alias := tc.sourceRdonlyQs[0].alias
+	if got, want := statsStreamingQueryErrorsCounters.Counts()[alias], int64(1); got != want {
+		t.Errorf("wrong number of errored streaming query for tablet: %v: got = %v, want = %v", alias, got, want)
+	}
+	if got, want := statsStreamingQueryCounters.Counts()[alias], int64(1); got != want {
+		t.Errorf("wrong number of streaming query starts for tablet: %v: got = %v, want = %v", alias, got, want)
+	}
+}
+
+// TestSplitCloneV2_Online_FailOverStreamingQuery is identical to
+// TestSplitCloneV2_Online but forces SplitClone to restart the streaming
+// query on the source *and* failover to a different source tablet before
+// reading the last row.
+func TestSplitCloneV2_Online_FailOverStreamingQuery(t *testing.T) {
+	tc := &splitCloneTestCase{t: t}
+	tc.setUpWithConcurreny(false /* v3 */, 1, 10, splitCloneTestRowsCount)
+	defer tc.tearDown()
+
+	// In the online phase we won't enable filtered replication. Don't expect it.
+	tc.leftMasterFakeDb.deleteAllEntriesAfterIndex(4)
+	tc.rightMasterFakeDb.deleteAllEntriesAfterIndex(4)
+
+	// Ensure that this test uses only the first tablet initially.
+	tc.sourceRdonlyQs[1].AddHealthResponseWithSecondsBehindMaster(3600)
+
+	// Let the first tablet fail at the last row.
+	tc.sourceRdonlyQs[0].errorStreamAtRow(199, 12345667890 /* infinite */)
+	tc.sourceRdonlyQs[0].setErrorCallback(func() {
+		// Make the first tablet unhealthy and the second one healthy again.
+		// vtworker should failover from the first to the second tablet then.
+		tc.sourceRdonlyQs[0].AddHealthResponseWithSecondsBehindMaster(3600)
+		tc.sourceRdonlyQs[1].AddHealthResponseWithSecondsBehindMaster(1)
+	})
+
+	// Only wait 1 ns between retries, so that the test passes faster.
+	*executeFetchRetryTime = 1 * time.Nanosecond
+
+	// Run the vtworker command.
+	args := []string{"SplitClone",
+		"-offline=false",
+		// We require only 1 instead of the default 2 replicas.
+		"--min_healthy_rdonly_tablets", "1"}
+	args = append(args, tc.defaultWorkerArgs[2:]...)
+	if err := runCommand(t, tc.wi, tc.wi.wr, args); err != nil {
+		t.Fatal(err)
+	}
+
+	first := tc.sourceRdonlyQs[0].alias
+	second := tc.sourceRdonlyQs[1].alias
+	if got, want := statsStreamingQueryErrorsCounters.Counts()[first], int64(2); got < want {
+		t.Errorf("wrong number of errored streaming query for tablet: %v: got = %v, want >= %v", first, got, want)
+	}
+	if got, want := statsStreamingQueryCounters.Counts()[first], int64(1); got != want {
+		t.Errorf("wrong number of streaming query starts for tablet: %v: got = %v, want = %v", first, got, want)
+	}
+	if got, want := statsStreamingQueryCounters.Counts()[second], int64(1); got != want {
+		t.Errorf("wrong number of streaming query starts for tablet: %v: got = %v, want = %v", second, got, want)
+	}
+}
+
+// TestSplitCloneV2_Online_TabletsUnavailableDuringRestart is similar to
+// TestSplitCloneV2_Online_FailOverStreamingQuery because both succeed initially
+// except for the last row. While the other test succeeds by failing over to a
+// different tablet, this test fails eventually because the other tablet is
+// unavailable as well.
+// The purpose of this test is to cover code branches in
+// restartable_result_reader.go where we keep retrying while no tablet may be
+// available.
+func TestSplitCloneV2_Online_TabletsUnavailableDuringRestart(t *testing.T) {
+	tc := &splitCloneTestCase{t: t}
+	tc.setUpWithConcurreny(false /* v3 */, 1, 10, splitCloneTestRowsCount)
+	defer tc.tearDown()
+
+	// In the online phase we won't enable filtered replication. Don't expect it.
+	tc.leftMasterFakeDb.deleteAllEntriesAfterIndex(4)
+	tc.rightMasterFakeDb.deleteAllEntriesAfterIndex(4)
+	// The last row will never make it. Don't expect it.
+	tc.rightMasterFakeDb.deleteAllEntriesAfterIndex(3)
+
+	// Ensure that this test uses only the first tablet initially.
+	tc.sourceRdonlyQs[1].AddHealthResponseWithNotServing()
+
+	// Let the first tablet fail at the last row.
+	tc.sourceRdonlyQs[0].errorStreamAtRow(199, 12345667890 /* infinite */)
+	tc.sourceRdonlyQs[0].setErrorCallback(func() {
+		// Make the second tablet unavailable as well. vtworker should keep retrying
+		// and fail eventually because no tablet is there.
+		tc.sourceRdonlyQs[0].AddHealthResponseWithNotServing()
+	})
+
+	// Only wait 1 ms between retries, so that the test passes faster.
+	*executeFetchRetryTime = 1 * time.Millisecond
+	// Let vtworker keep retrying and give up rather quickly because the test
+	// will be blocked until it finally fails.
+	defaultRetryDuration := *retryDuration
+	*retryDuration = 100 * time.Millisecond
+	defer func() {
+		*retryDuration = defaultRetryDuration
+	}()
+
+	// Run the vtworker command.
+	args := []string{"SplitClone",
+		"-offline=false",
+		// We require only 1 instead of the default 2 replicas.
+		"--min_healthy_rdonly_tablets", "1"}
+	args = append(args, tc.defaultWorkerArgs[2:]...)
+	if err := runCommand(t, tc.wi, tc.wi.wr, args); err == nil || !strings.Contains(err.Error(), "failed to restart the streaming connection after retrying for 100ms") {
+		t.Fatalf("worker should have failed because all tablets became unavailable and it gave up retrying. err: %v", err)
+	}
+
+	first := tc.sourceRdonlyQs[0].alias
+	// Note that we can track only 2 errors for the first tablet because it
+	// becomes unavailable after that.
+	if got, want := statsStreamingQueryErrorsCounters.Counts()[first], int64(2); got < want {
+		t.Errorf("wrong number of errored streaming query for tablet: %v: got = %v, want >= %v", first, got, want)
+	}
+	if got, want := statsStreamingQueryCounters.Counts()[first], int64(1); got != want {
+		t.Errorf("wrong number of streaming query starts for tablet: %v: got = %v, want = %v", first, got, want)
 	}
 }
 
@@ -479,23 +732,12 @@ func TestSplitCloneV2_Online(t *testing.T) {
 	if err := runCommand(t, tc.wi, tc.wi.wr, args); err != nil {
 		t.Fatal(err)
 	}
-	if inserts := statsOnlineInsertsCounters.Counts()["table1"]; inserts != 100 {
-		t.Errorf("wrong number of rows inserted: got = %v, want = %v", inserts, 100)
+
+	if err := verifyOnlineCounters(100, 0, 0, 0); err != nil {
+		t.Fatalf("wrong Online counters: %v", err)
 	}
-	if updates := statsOnlineUpdatesCounters.Counts()["table1"]; updates != 0 {
-		t.Errorf("wrong number of rows updated: got = %v, want = %v", updates, 0)
-	}
-	if deletes := statsOnlineDeletesCounters.Counts()["table1"]; deletes != 0 {
-		t.Errorf("wrong number of rows deleted: got = %v, want = %v", deletes, 0)
-	}
-	if inserts := statsOfflineInsertsCounters.Counts()["table1"]; inserts != 0 {
-		t.Errorf("no stats for the offline clone phase should have been modified. got inserts = %v", inserts)
-	}
-	if updates := statsOfflineUpdatesCounters.Counts()["table1"]; updates != 0 {
-		t.Errorf("no stats for the offline clone phase should have been modified. got updates = %v", updates)
-	}
-	if deletes := statsOfflineDeletesCounters.Counts()["table1"]; deletes != 0 {
-		t.Errorf("no stats for the offline clone phase should have been modified. got deletes = %v", deletes)
+	if err := verifyOfflineCounters(0, 0, 0, 0); err != nil {
+		t.Fatalf("wrong Offline counters: %v", err)
 	}
 }
 
@@ -523,33 +765,23 @@ func TestSplitCloneV2_Online_Offline(t *testing.T) {
 	if err := runCommand(t, tc.wi, tc.wi.wr, args); err != nil {
 		t.Fatal(err)
 	}
-	if inserts := statsOnlineInsertsCounters.Counts()["table1"]; inserts != 100 {
-		t.Errorf("wrong number of rows inserted: got = %v, want = %v", inserts, 100)
+
+	if err := verifyOnlineCounters(100, 0, 0, 0); err != nil {
+		t.Fatalf("wrong Online counters: %v", err)
 	}
-	if updates := statsOnlineUpdatesCounters.Counts()["table1"]; updates != 0 {
-		t.Errorf("wrong number of rows updated: got = %v, want = %v", updates, 0)
-	}
-	if deletes := statsOnlineDeletesCounters.Counts()["table1"]; deletes != 0 {
-		t.Errorf("wrong number of rows deleted: got = %v, want = %v", deletes, 0)
-	}
-	if inserts := statsOfflineInsertsCounters.Counts()["table1"]; inserts != 0 {
-		t.Errorf("no stats for the offline clone phase should have been modified. got inserts = %v", inserts)
-	}
-	if updates := statsOfflineUpdatesCounters.Counts()["table1"]; updates != 0 {
-		t.Errorf("no stats for the offline clone phase should have been modified. got updates = %v", updates)
-	}
-	if deletes := statsOfflineDeletesCounters.Counts()["table1"]; deletes != 0 {
-		t.Errorf("no stats for the offline clone phase should have been modified. got deletes = %v", deletes)
+	if err := verifyOfflineCounters(0, 0, 0, 100); err != nil {
+		t.Fatalf("wrong Offline counters: %v", err)
 	}
 }
 
-// TestSplitCloneV2_Reconciliation is identical to TestSplitCloneV2_Offline,
-// but the destination has existing data which must be reconciled.
-func TestSplitCloneV2_Reconciliation(t *testing.T) {
+// TestSplitCloneV2_Offline_Reconciliation is identical to
+// TestSplitCloneV2_Offline, but the destination has existing data which must be
+// reconciled.
+func TestSplitCloneV2_Offline_Reconciliation(t *testing.T) {
 	tc := &splitCloneTestCase{t: t}
 	// We reduce the parallelism to 1 to test the order of expected
 	// insert/update/delete statements on the destination master.
-	tc.setUpWithConcurreny(false /* v3 */, 1, 10)
+	tc.setUpWithConcurreny(false /* v3 */, 1, 10, splitCloneTestRowsCount)
 	defer tc.tearDown()
 
 	// We assume that an Online Clone ran before which copied the rows 100-199
@@ -568,7 +800,8 @@ func TestSplitCloneV2_Reconciliation(t *testing.T) {
 	}
 
 	for i := range []int{0, 1} {
-		// Both destination shards have the rows 100-200.
+		// The destination has rows 100-190 with the source in common.
+		// Rows 191-200 are extraenous on the destination.
 		tc.leftRdonlyQs[i].addGeneratedRows(100, 200)
 		tc.rightRdonlyQs[i].addGeneratedRows(100, 200)
 		// But some data is outdated data and must be updated.
@@ -582,19 +815,19 @@ func TestSplitCloneV2_Reconciliation(t *testing.T) {
 	tc.leftMasterFakeDb.deleteAllEntries()
 	tc.rightMasterFakeDb.deleteAllEntries()
 	// Update statements. (One query will update one row.)
-	tc.leftMasterFakeDb.addExpectedQuery("UPDATE `vt_ks`.table1 SET msg='Text for 100',keyspace_id=2305843009213693952 WHERE id=100", nil)
-	tc.leftMasterFakeDb.addExpectedQuery("UPDATE `vt_ks`.table1 SET msg='Text for 102',keyspace_id=2305843009213693952 WHERE id=102", nil)
-	tc.rightMasterFakeDb.addExpectedQuery("UPDATE `vt_ks`.table1 SET msg='Text for 101',keyspace_id=6917529027641081856 WHERE id=101", nil)
-	tc.rightMasterFakeDb.addExpectedQuery("UPDATE `vt_ks`.table1 SET msg='Text for 103',keyspace_id=6917529027641081856 WHERE id=103", nil)
+	tc.leftMasterFakeDb.addExpectedQuery("UPDATE `vt_ks`.`table1` SET `msg`='Text for 100',`keyspace_id`=2305843009213693952 WHERE `id`=100", nil)
+	tc.leftMasterFakeDb.addExpectedQuery("UPDATE `vt_ks`.`table1` SET `msg`='Text for 102',`keyspace_id`=2305843009213693952 WHERE `id`=102", nil)
+	tc.rightMasterFakeDb.addExpectedQuery("UPDATE `vt_ks`.`table1` SET `msg`='Text for 101',`keyspace_id`=6917529027641081856 WHERE `id`=101", nil)
+	tc.rightMasterFakeDb.addExpectedQuery("UPDATE `vt_ks`.`table1` SET `msg`='Text for 103',`keyspace_id`=6917529027641081856 WHERE `id`=103", nil)
 	// Delete statements. (First 3 rows on each shard.)
-	tc.leftMasterFakeDb.addExpectedQuery("DELETE FROM `vt_ks`.table1 WHERE (id=190) OR (id=192) OR (id=194)", nil)
-	tc.rightMasterFakeDb.addExpectedQuery("DELETE FROM `vt_ks`.table1 WHERE (id=191) OR (id=193) OR (id=195)", nil)
+	tc.leftMasterFakeDb.addExpectedQuery("DELETE FROM `vt_ks`.`table1` WHERE (`id`=190) OR (`id`=192) OR (`id`=194)", nil)
+	tc.rightMasterFakeDb.addExpectedQuery("DELETE FROM `vt_ks`.`table1` WHERE (`id`=191) OR (`id`=193) OR (`id`=195)", nil)
 	// Insert statements. (All are combined in one.)
-	tc.leftMasterFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.table1 (id, msg, keyspace_id) VALUES (96,'Text for 96',2305843009213693952),(98,'Text for 98',2305843009213693952)", nil)
-	tc.rightMasterFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.table1 (id, msg, keyspace_id) VALUES (97,'Text for 97',6917529027641081856),(99,'Text for 99',6917529027641081856)", nil)
+	tc.leftMasterFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.`table1` (`id`, `msg`, `keyspace_id`) VALUES (96,'Text for 96',2305843009213693952),(98,'Text for 98',2305843009213693952)", nil)
+	tc.rightMasterFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.`table1` (`id`, `msg`, `keyspace_id`) VALUES (97,'Text for 97',6917529027641081856),(99,'Text for 99',6917529027641081856)", nil)
 	// Delete statements (after flush).
-	tc.leftMasterFakeDb.addExpectedQuery("DELETE FROM `vt_ks`.table1 WHERE (id=196) OR (id=198)", nil)
-	tc.rightMasterFakeDb.addExpectedQuery("DELETE FROM `vt_ks`.table1 WHERE (id=197) OR (id=199)", nil)
+	tc.leftMasterFakeDb.addExpectedQuery("DELETE FROM `vt_ks`.`table1` WHERE (`id`=196) OR (`id`=198)", nil)
+	tc.rightMasterFakeDb.addExpectedQuery("DELETE FROM `vt_ks`.`table1` WHERE (`id`=197) OR (`id`=199)", nil)
 	expectBlpCheckpointCreationQueries(tc.leftMasterFakeDb)
 	expectBlpCheckpointCreationQueries(tc.rightMasterFakeDb)
 
@@ -604,23 +837,12 @@ func TestSplitCloneV2_Reconciliation(t *testing.T) {
 	if err := runCommand(t, tc.wi, tc.wi.wr, args); err != nil {
 		t.Fatal(err)
 	}
-	if inserts := statsOnlineInsertsCounters.Counts()["table1"]; inserts != 0 {
-		t.Errorf("no stats for the online clone phase should have been modified. got inserts = %v", inserts)
+
+	if err := verifyOnlineCounters(0, 0, 0, 0); err != nil {
+		t.Fatalf("wrong Online counters: %v", err)
 	}
-	if updates := statsOnlineUpdatesCounters.Counts()["table1"]; updates != 0 {
-		t.Errorf("no stats for the online clone phase should have been modified. got updates = %v", updates)
-	}
-	if deletes := statsOnlineDeletesCounters.Counts()["table1"]; deletes != 0 {
-		t.Errorf("no stats for the online clone phase should have been modified. got deletes = %v", deletes)
-	}
-	if inserts := statsOfflineInsertsCounters.Counts()["table1"]; inserts != 4 {
-		t.Errorf("wrong number of rows inserted: got = %v, want = %v", inserts, 4)
-	}
-	if updates := statsOfflineUpdatesCounters.Counts()["table1"]; updates != 4 {
-		t.Errorf("wrong number of rows updated: got = %v, want = %v", updates, 4)
-	}
-	if deletes := statsOfflineDeletesCounters.Counts()["table1"]; deletes != 10 {
-		t.Errorf("wrong number of rows deleted: got = %v, want = %v", deletes, 10)
+	if err := verifyOfflineCounters(4, 4, 10, 86); err != nil {
+		t.Fatalf("wrong Offline counters: %v", err)
 	}
 }
 
@@ -671,8 +893,8 @@ func TestSplitCloneV2_RetryDueToReadonly(t *testing.T) {
 	defer tc.tearDown()
 
 	// Provoke a retry to test the error handling.
-	tc.leftMasterFakeDb.addExpectedQueryAtIndex(0, "INSERT INTO `vt_ks`.table1 (id, msg, keyspace_id) VALUES (*", errReadOnly)
-	tc.rightMasterFakeDb.addExpectedQueryAtIndex(0, "INSERT INTO `vt_ks`.table1 (id, msg, keyspace_id) VALUES (*", errReadOnly)
+	tc.leftMasterFakeDb.addExpectedQueryAtIndex(0, "INSERT INTO `vt_ks`.`table1` (`id`, `msg`, `keyspace_id`) VALUES (*", errReadOnly)
+	tc.rightMasterFakeDb.addExpectedQueryAtIndex(0, "INSERT INTO `vt_ks`.`table1` (`id`, `msg`, `keyspace_id`) VALUES (*", errReadOnly)
 	// Only wait 1 ms between retries, so that the test passes faster.
 	*executeFetchRetryTime = 1 * time.Millisecond
 
@@ -701,12 +923,12 @@ func TestSplitCloneV2_RetryDueToReparent(t *testing.T) {
 
 	// Provoke a reparent just before the copy finishes.
 	// leftReplica will take over for the last, 30th, insert and the BLP checkpoint.
-	tc.leftReplicaFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.table1 (id, msg, keyspace_id) VALUES (*", nil)
+	tc.leftReplicaFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.`table1` (`id`, `msg`, `keyspace_id`) VALUES (*", nil)
 	expectBlpCheckpointCreationQueries(tc.leftReplicaFakeDb)
 
 	// Do not let leftMaster succeed the 30th write.
 	tc.leftMasterFakeDb.deleteAllEntriesAfterIndex(28)
-	tc.leftMasterFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.table1 (id, msg, keyspace_id) VALUES (*", errReadOnly)
+	tc.leftMasterFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.`table1` (`id`, `msg`, `keyspace_id`) VALUES (*", errReadOnly)
 	tc.leftMasterFakeDb.enableInfinite()
 	// When vtworker encounters the readonly error on leftMaster, do the reparent.
 	tc.leftMasterFakeDb.getEntry(29).AfterFunc = func() {
@@ -761,7 +983,7 @@ func TestSplitCloneV2_NoMasterAvailable(t *testing.T) {
 	defer tc.tearDown()
 
 	// leftReplica will take over for the last, 30th, insert and the BLP checkpoint.
-	tc.leftReplicaFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.table1 (id, msg, keyspace_id) VALUES (*", nil)
+	tc.leftReplicaFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.`table1` (`id`, `msg`, `keyspace_id`) VALUES (*", nil)
 	expectBlpCheckpointCreationQueries(tc.leftReplicaFakeDb)
 
 	// During the 29th write, let the MASTER disappear.
@@ -773,7 +995,7 @@ func TestSplitCloneV2_NoMasterAvailable(t *testing.T) {
 	// If the HealthCheck didn't pick up the change yet, the 30th write would
 	// succeed. To prevent this from happening, replace it with an error.
 	tc.leftMasterFakeDb.deleteAllEntriesAfterIndex(28)
-	tc.leftMasterFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.table1 (id, msg, keyspace_id) VALUES (*", errReadOnly)
+	tc.leftMasterFakeDb.addExpectedQuery("INSERT INTO `vt_ks`.`table1` (`id`, `msg`, `keyspace_id`) VALUES (*", errReadOnly)
 	tc.leftMasterFakeDb.enableInfinite()
 	// vtworker may not retry on leftMaster again if HealthCheck picks up the
 	// change very fast. In that case, the error was never encountered.
@@ -823,4 +1045,38 @@ func TestSplitCloneV3(t *testing.T) {
 	if err := runCommand(t, tc.wi, tc.wi.wr, tc.defaultWorkerArgs); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func verifyOnlineCounters(inserts, updates, deletes, equal int64) error {
+	rec := concurrency.AllErrorRecorder{}
+	if got, want := statsOnlineInsertsCounters.Counts()["table1"], inserts; got != want {
+		rec.RecordError(fmt.Errorf("wrong online INSERTs count: got = %v, want = %v", got, want))
+	}
+	if got, want := statsOnlineUpdatesCounters.Counts()["table1"], updates; got != want {
+		rec.RecordError(fmt.Errorf("wrong online UPDATEs count: got = %v, want = %v", got, want))
+	}
+	if got, want := statsOnlineDeletesCounters.Counts()["table1"], deletes; got != want {
+		rec.RecordError(fmt.Errorf("wrong online DELETEs count: got = %v, want = %v", got, want))
+	}
+	if got, want := statsOnlineEqualRowsCounters.Counts()["table1"], equal; got != want {
+		rec.RecordError(fmt.Errorf("wrong online equal rows count: got = %v, want = %v", got, want))
+	}
+	return rec.Error()
+}
+
+func verifyOfflineCounters(inserts, updates, deletes, equal int64) error {
+	rec := concurrency.AllErrorRecorder{}
+	if got, want := statsOfflineInsertsCounters.Counts()["table1"], inserts; got != want {
+		rec.RecordError(fmt.Errorf("wrong offline INSERTs count: got = %v, want = %v", got, want))
+	}
+	if got, want := statsOfflineUpdatesCounters.Counts()["table1"], updates; got != want {
+		rec.RecordError(fmt.Errorf("wrong offline UPDATEs count: got = %v, want = %v", got, want))
+	}
+	if got, want := statsOfflineDeletesCounters.Counts()["table1"], deletes; got != want {
+		rec.RecordError(fmt.Errorf("wrong offline DELETEs count: got = %v, want = %v", got, want))
+	}
+	if got, want := statsOfflineEqualRowsCounters.Counts()["table1"], equal; got != want {
+		rec.RecordError(fmt.Errorf("wrong offline equal rows count: got = %v, want = %v", got, want))
+	}
+	return rec.Error()
 }
