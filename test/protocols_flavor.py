@@ -13,13 +13,6 @@ class ProtocolsFlavor(object):
     """The binlog player protocol between vttablets, in go."""
     raise NotImplementedError('Not implemented in the base class')
 
-  def binlog_player_python_protocol(self):
-    """The binlog player protocol in for python connections.
-
-    This is for python connections to update_stream service.
-    """
-    raise NotImplementedError('Not implemented in the base class')
-
   def vtctl_client_protocol(self):
     """The protocol to use for vtctl connections.
 
@@ -59,10 +52,6 @@ class ProtocolsFlavor(object):
 
   def vtgate_python_protocol(self):
     """The protocol to use to talk to vtgate with python clients."""
-    raise NotImplementedError('Not implemented in the base class')
-
-  def vtgate_python_types(self):
-    """Returns either 'proto3' or 'mysql' for the enum types."""
     raise NotImplementedError('Not implemented in the base class')
 
   def client_error_exception_type(self):

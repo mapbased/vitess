@@ -13,11 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/youtube/vitess/go/sync2"
+	"golang.org/x/net/context"
+
 	"github.com/youtube/vitess/go/vt/mysqlctl"
 	"github.com/youtube/vitess/go/vt/mysqlctl/replication"
 
 	binlogdatapb "github.com/youtube/vitess/go/vt/proto/binlogdata"
+	querypb "github.com/youtube/vitess/go/vt/proto/query"
 )
 
 // fakeEvent implements replication.BinlogEvent.
@@ -31,6 +33,7 @@ func (fakeEvent) IsGTID() bool                          { return false }
 func (fakeEvent) IsRotate() bool                        { return false }
 func (fakeEvent) IsIntVar() bool                        { return false }
 func (fakeEvent) IsRand() bool                          { return false }
+func (fakeEvent) IsPreviousGTIDs() bool                 { return false }
 func (fakeEvent) HasGTID(replication.BinlogFormat) bool { return true }
 func (fakeEvent) Timestamp() uint32                     { return 1407805592 }
 func (fakeEvent) Format() (replication.BinlogFormat, error) {
@@ -38,6 +41,9 @@ func (fakeEvent) Format() (replication.BinlogFormat, error) {
 }
 func (fakeEvent) GTID(replication.BinlogFormat) (replication.GTID, error) {
 	return replication.MariadbGTID{Domain: 0, Server: 62344, Sequence: 0xd}, nil
+}
+func (fakeEvent) PreviousGTIDs(replication.BinlogFormat) (replication.Position, error) {
+	return replication.Position{}, errors.New("not a PreviousGTIDs")
 }
 func (fakeEvent) IsBeginGTID(replication.BinlogFormat) bool { return false }
 func (fakeEvent) Query(replication.BinlogFormat) (replication.Query, error) {
@@ -179,12 +185,16 @@ func TestStreamerParseEventsXID(t *testing.T) {
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_SET, Sql: []byte("SET TIMESTAMP=1407805592")},
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_DML, Sql: []byte("insert into vt_a(eid, id) values (1, 1) /* _stream vt_a (eid id ) (1 1 ); */")},
 			},
-			Timestamp: 1407805592,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 0x0d,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1407805592,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 0x0d,
+					},
+				}),
+			},
 		},
 	}
 	var got []binlogdatapb.BinlogTransaction
@@ -192,15 +202,11 @@ func TestStreamerParseEventsXID(t *testing.T) {
 		got = append(got, *trans)
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	if err := svm.Join(); err != ErrServerEOF {
+	_, err := bls.parseEvents(context.Background(), events)
+	if err != ErrServerEOF {
 		t.Errorf("unexpected error: %v", err)
 	}
 
@@ -232,12 +238,16 @@ func TestStreamerParseEventsCommit(t *testing.T) {
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_SET, Sql: []byte("SET TIMESTAMP=1407805592")},
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_DML, Sql: []byte("insert into vt_a(eid, id) values (1, 1) /* _stream vt_a (eid id ) (1 1 ); */")},
 			},
-			Timestamp: 1407805592,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 0x0d,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1407805592,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 0x0d,
+					},
+				}),
+			},
 		},
 	}
 	var got []binlogdatapb.BinlogTransaction
@@ -245,15 +255,11 @@ func TestStreamerParseEventsCommit(t *testing.T) {
 		got = append(got, *trans)
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	if err := svm.Join(); err != ErrServerEOF {
+	_, err := bls.parseEvents(context.Background(), events)
+	if err != ErrServerEOF {
 		t.Errorf("unexpected error: %v", err)
 	}
 
@@ -268,26 +274,24 @@ func TestStreamerStop(t *testing.T) {
 	sendTransaction := func(trans *binlogdatapb.BinlogTransaction) error {
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	// Start parseEvents(), but don't send it anything, so it just waits.
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-		return nil
-	})
-
-	done := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error)
 	go func() {
-		svm.Stop()
-		close(done)
+		_, err := bls.parseEvents(ctx, events)
+		done <- err
 	}()
 
+	// close the context, expect the parser to return
+	cancel()
+
 	select {
-	case <-done:
+	case err := <-done:
+		if err != context.Canceled {
+			t.Errorf("wrong context interruption returned value: %v", err)
+		}
 	case <-time.After(1 * time.Second):
 		t.Errorf("timed out waiting for binlogConnStreamer.Stop()")
 	}
@@ -312,18 +316,10 @@ func TestStreamerParseEventsClientEOF(t *testing.T) {
 	sendTransaction := func(trans *binlogdatapb.BinlogTransaction) error {
 		return io.EOF
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	err := svm.Join()
-	if err == nil {
-		t.Errorf("expected error, got none")
-	}
+	_, err := bls.parseEvents(context.Background(), events)
 	if err != want {
 		t.Errorf("wrong error, got %#v, want %#v", err, want)
 	}
@@ -338,17 +334,9 @@ func TestStreamerParseEventsServerEOF(t *testing.T) {
 	sendTransaction := func(trans *binlogdatapb.BinlogTransaction) error {
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	err := svm.Join()
-	if err == nil {
-		t.Errorf("expected error, got none")
-	}
+	_, err := bls.parseEvents(context.Background(), events)
 	if err != want {
 		t.Errorf("wrong error, got %#v, want %#v", err, want)
 	}
@@ -373,15 +361,11 @@ func TestStreamerParseEventsSendErrorXID(t *testing.T) {
 	sendTransaction := func(trans *binlogdatapb.BinlogTransaction) error {
 		return fmt.Errorf("foobar")
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	err := svm.Join()
+
+	_, err := bls.parseEvents(context.Background(), events)
 	if err == nil {
 		t.Errorf("expected error, got none")
 		return
@@ -412,15 +396,10 @@ func TestStreamerParseEventsSendErrorCommit(t *testing.T) {
 	sendTransaction := func(trans *binlogdatapb.BinlogTransaction) error {
 		return fmt.Errorf("foobar")
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	err := svm.Join()
+	_, err := bls.parseEvents(context.Background(), events)
 	if err == nil {
 		t.Errorf("expected error, got none")
 		return
@@ -447,15 +426,10 @@ func TestStreamerParseEventsInvalid(t *testing.T) {
 	sendTransaction := func(trans *binlogdatapb.BinlogTransaction) error {
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	err := svm.Join()
+	_, err := bls.parseEvents(context.Background(), events)
 	if err == nil {
 		t.Errorf("expected error, got none")
 		return
@@ -484,15 +458,10 @@ func TestStreamerParseEventsInvalidFormat(t *testing.T) {
 	sendTransaction := func(trans *binlogdatapb.BinlogTransaction) error {
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	err := svm.Join()
+	_, err := bls.parseEvents(context.Background(), events)
 	if err == nil {
 		t.Errorf("expected error, got none")
 		return
@@ -521,15 +490,10 @@ func TestStreamerParseEventsNoFormat(t *testing.T) {
 	sendTransaction := func(trans *binlogdatapb.BinlogTransaction) error {
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	err := svm.Join()
+	_, err := bls.parseEvents(context.Background(), events)
 	if err == nil {
 		t.Errorf("expected error, got none")
 		return
@@ -556,15 +520,10 @@ func TestStreamerParseEventsInvalidQuery(t *testing.T) {
 	sendTransaction := func(trans *binlogdatapb.BinlogTransaction) error {
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	err := svm.Join()
+	_, err := bls.parseEvents(context.Background(), events)
 	if err == nil {
 		t.Errorf("expected error, got none")
 		return
@@ -604,24 +563,32 @@ func TestStreamerParseEventsRollback(t *testing.T) {
 	want := []binlogdatapb.BinlogTransaction{
 		{
 			Statements: nil,
-			Timestamp:  1407805592,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 0x0d,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1407805592,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 0x0d,
+					},
+				}),
+			},
 		},
 		{
 			Statements: []*binlogdatapb.BinlogTransaction_Statement{
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_SET, Sql: []byte("SET TIMESTAMP=1407805592")},
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_DML, Sql: []byte("insert into vt_a(eid, id) values (1, 1) /* _stream vt_a (eid id ) (1 1 ); */")},
 			},
-			Timestamp: 1407805592,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 0x0d,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1407805592,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 0x0d,
+					},
+				}),
+			},
 		},
 	}
 	var got []binlogdatapb.BinlogTransaction
@@ -629,15 +596,10 @@ func TestStreamerParseEventsRollback(t *testing.T) {
 		got = append(got, *trans)
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	if err := svm.Join(); err != ErrServerEOF {
+	if _, err := bls.parseEvents(context.Background(), events); err != ErrServerEOF {
 		t.Errorf("unexpected error: %v", err)
 	}
 
@@ -664,21 +626,29 @@ func TestStreamerParseEventsDMLWithoutBegin(t *testing.T) {
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_SET, Sql: []byte("SET TIMESTAMP=1407805592")},
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_DML, Sql: []byte("insert into vt_a(eid, id) values (1, 1) /* _stream vt_a (eid id ) (1 1 ); */")},
 			},
-			Timestamp: 1407805592,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 0x0d,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1407805592,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 0x0d,
+					},
+				}),
+			},
 		},
 		{
 			Statements: nil,
-			Timestamp:  1407805592,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 0x0d,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1407805592,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 0x0d,
+					},
+				}),
+			},
 		},
 	}
 	var got []binlogdatapb.BinlogTransaction
@@ -686,15 +656,10 @@ func TestStreamerParseEventsDMLWithoutBegin(t *testing.T) {
 		got = append(got, *trans)
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	if err := svm.Join(); err != ErrServerEOF {
+	if _, err := bls.parseEvents(context.Background(), events); err != ErrServerEOF {
 		t.Errorf("unexpected error: %v", err)
 	}
 
@@ -724,21 +689,29 @@ func TestStreamerParseEventsBeginWithoutCommit(t *testing.T) {
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_SET, Sql: []byte("SET TIMESTAMP=1407805592")},
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_DML, Sql: []byte("insert into vt_a(eid, id) values (1, 1) /* _stream vt_a (eid id ) (1 1 ); */")},
 			},
-			Timestamp: 1407805592,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 0x0d,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1407805592,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 0x0d,
+					},
+				}),
+			},
 		},
 		{
 			Statements: []*binlogdatapb.BinlogTransaction_Statement{},
-			Timestamp:  1407805592,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 0x0d,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1407805592,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 0x0d,
+					},
+				}),
+			},
 		},
 	}
 	var got []binlogdatapb.BinlogTransaction
@@ -746,15 +719,10 @@ func TestStreamerParseEventsBeginWithoutCommit(t *testing.T) {
 		got = append(got, *trans)
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	if err := svm.Join(); err != ErrServerEOF {
+	if _, err := bls.parseEvents(context.Background(), events); err != ErrServerEOF {
 		t.Errorf("unexpected error: %v", err)
 	}
 
@@ -786,12 +754,16 @@ func TestStreamerParseEventsSetInsertID(t *testing.T) {
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_SET, Sql: []byte("SET TIMESTAMP=1407805592")},
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_DML, Sql: []byte("insert into vt_a(eid, id) values (1, 1) /* _stream vt_a (eid id ) (1 1 ); */")},
 			},
-			Timestamp: 1407805592,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 0x0d,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1407805592,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 0x0d,
+					},
+				}),
+			},
 		},
 	}
 	var got []binlogdatapb.BinlogTransaction
@@ -799,15 +771,10 @@ func TestStreamerParseEventsSetInsertID(t *testing.T) {
 		got = append(got, *trans)
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	if err := svm.Join(); err != ErrServerEOF {
+	if _, err := bls.parseEvents(context.Background(), events); err != ErrServerEOF {
 		t.Errorf("unexpected error: %v", err)
 	}
 
@@ -836,15 +803,10 @@ func TestStreamerParseEventsInvalidIntVar(t *testing.T) {
 	sendTransaction := func(trans *binlogdatapb.BinlogTransaction) error {
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	err := svm.Join()
+	_, err := bls.parseEvents(context.Background(), events)
 	if err == nil {
 		t.Errorf("expected error, got none")
 		return
@@ -878,12 +840,16 @@ func TestStreamerParseEventsOtherDB(t *testing.T) {
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_SET, Sql: []byte("SET TIMESTAMP=1407805592")},
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_DML, Sql: []byte("insert into vt_a(eid, id) values (1, 1) /* _stream vt_a (eid id ) (1 1 ); */")},
 			},
-			Timestamp: 1407805592,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 0x0d,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1407805592,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 0x0d,
+					},
+				}),
+			},
 		},
 	}
 	var got []binlogdatapb.BinlogTransaction
@@ -891,15 +857,10 @@ func TestStreamerParseEventsOtherDB(t *testing.T) {
 		got = append(got, *trans)
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	if err := svm.Join(); err != ErrServerEOF {
+	if _, err := bls.parseEvents(context.Background(), events); err != ErrServerEOF {
 		t.Errorf("unexpected error: %v", err)
 	}
 
@@ -932,12 +893,16 @@ func TestStreamerParseEventsOtherDBBegin(t *testing.T) {
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_SET, Sql: []byte("SET TIMESTAMP=1407805592")},
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_DML, Sql: []byte("insert into vt_a(eid, id) values (1, 1) /* _stream vt_a (eid id ) (1 1 ); */")},
 			},
-			Timestamp: 1407805592,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 0x0d,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1407805592,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 0x0d,
+					},
+				}),
+			},
 		},
 	}
 	var got []binlogdatapb.BinlogTransaction
@@ -945,15 +910,10 @@ func TestStreamerParseEventsOtherDBBegin(t *testing.T) {
 		got = append(got, *trans)
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	if err := svm.Join(); err != ErrServerEOF {
+	if _, err := bls.parseEvents(context.Background(), events); err != ErrServerEOF {
 		t.Errorf("unexpected error: %v", err)
 	}
 
@@ -982,16 +942,11 @@ func TestStreamerParseEventsBeginAgain(t *testing.T) {
 	sendTransaction := func(trans *binlogdatapb.BinlogTransaction) error {
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 	before := binlogStreamerErrors.Counts()["ParseEvents"]
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	if err := svm.Join(); err != ErrServerEOF {
+	if _, err := bls.parseEvents(context.Background(), events); err != ErrServerEOF {
 		t.Errorf("unexpected error: %v", err)
 	}
 	after := binlogStreamerErrors.Counts()["ParseEvents"]
@@ -1017,12 +972,16 @@ func TestStreamerParseEventsMariadbBeginGTID(t *testing.T) {
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_SET, Charset: charset, Sql: []byte("SET TIMESTAMP=1409892744")},
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_DML, Charset: charset, Sql: []byte("insert into vt_insert_test(msg) values ('test 0') /* _stream vt_insert_test (id ) (null ); */")},
 			},
-			Timestamp: 1409892744,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 10,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1409892744,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 10,
+					},
+				}),
+			},
 		},
 	}
 	var got []binlogdatapb.BinlogTransaction
@@ -1030,15 +989,10 @@ func TestStreamerParseEventsMariadbBeginGTID(t *testing.T) {
 		got = append(got, *trans)
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	if err := svm.Join(); err != ErrServerEOF {
+	if _, err := bls.parseEvents(context.Background(), events); err != ErrServerEOF {
 		t.Errorf("unexpected error: %v", err)
 	}
 
@@ -1063,12 +1017,16 @@ func TestStreamerParseEventsMariadbStandaloneGTID(t *testing.T) {
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_SET, Charset: &binlogdatapb.Charset{Client: 8, Conn: 8, Server: 33}, Sql: []byte("SET TIMESTAMP=1409892744")},
 				{Category: binlogdatapb.BinlogTransaction_Statement_BL_DDL, Charset: &binlogdatapb.Charset{Client: 8, Conn: 8, Server: 33}, Sql: []byte("create table if not exists vt_insert_test (\nid bigint auto_increment,\nmsg varchar(64),\nprimary key (id)\n) Engine=InnoDB")},
 			},
-			Timestamp: 1409892744,
-			TransactionId: replication.EncodeGTID(replication.MariadbGTID{
-				Domain:   0,
-				Server:   62344,
-				Sequence: 9,
-			}),
+			EventToken: &querypb.EventToken{
+				Timestamp: 1409892744,
+				Position: replication.EncodePosition(replication.Position{
+					GTIDSet: replication.MariadbGTID{
+						Domain:   0,
+						Server:   62344,
+						Sequence: 9,
+					},
+				}),
+			},
 		},
 	}
 	var got []binlogdatapb.BinlogTransaction
@@ -1076,15 +1034,10 @@ func TestStreamerParseEventsMariadbStandaloneGTID(t *testing.T) {
 		got = append(got, *trans)
 		return nil
 	}
-	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, sendTransaction)
+	bls := NewStreamer("vt_test_keyspace", nil, nil, replication.Position{}, 0, sendTransaction)
 
 	go sendTestEvents(events, input)
-	svm := &sync2.ServiceManager{}
-	svm.Go(func(ctx *sync2.ServiceContext) error {
-		_, err := bls.parseEvents(ctx, events)
-		return err
-	})
-	if err := svm.Join(); err != ErrServerEOF {
+	if _, err := bls.parseEvents(context.Background(), events); err != ErrServerEOF {
 		t.Errorf("unexpected error: %v", err)
 	}
 

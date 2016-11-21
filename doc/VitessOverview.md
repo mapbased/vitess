@@ -6,9 +6,17 @@ traffic since 2011.
 
 ## Vitess on Kubernetes
 
-Kubernetes is an open-source orchestration system for Docker containers, and Vitess is the logical storage engine choice for Kubernetes users.
+[Kubernetes](http://kubernetes.io/) is an open-source orchestration system for Docker containers, and Vitess can run as a Kubernetes-aware cloud native distributed database.
 
-Kubernetes handles scheduling onto nodes in a compute cluster, actively manages workloads on those nodes, and groups containers comprising an application for easy management and discovery. Using Kubernetes, you can easily create and manage a Vitess cluster, out of the box.
+Kubernetes handles scheduling onto nodes in a compute cluster, actively manages workloads on those nodes, and groups containers comprising an application for easy management and discovery.
+This provides an analogous open-source environment to the way Vitess runs in YouTube,
+on the [predecessor to Kubernetes](http://blog.kubernetes.io/2015/04/borg-predecessor-to-kubernetes.html).
+
+<div style="text-align:center">
+<a class="btn btn-default btn-lg" href="/getting-started/" role="button" style="margin-bottom:16px">
+<img src="/images/kubernetes.svg" style="width:30px;height:30px;margin-top:-5px">
+Quickstart</a>
+</div>
 
 ## Comparisons to other storage options
 
@@ -126,7 +134,7 @@ The diagram below illustrates Vitess' components:
 
 ### Topology
 
-The [Topology Service](https://github.com/youtube/vitess/blob/master/doc/TopologyService.md) is a metadata store that contains information about running servers, the sharding scheme, and the replication graph.  The topology is backed by a consistent data store.  You can explore the topology using **vtctl** (command-line) and **vtctld** (web).
+The [Topology Service](/user-guide/topology-service.html) is a metadata store that contains information about running servers, the sharding scheme, and the replication graph.  The topology is backed by a consistent data store.  You can explore the topology using **vtctl** (command-line) and **vtctld** (web).
 
 In Kubernetes, the data store is [etcd](https://github.com/coreos/etcd).  Vitess source code also ships with [Apache ZooKeeper](http://zookeeper.apache.org/) support.
 

@@ -40,6 +40,19 @@ func TestHealthCheck(t *testing.T) {
 	hc.AddTablet(tablet, "")
 	t.Logf(`hc = HealthCheck(); hc.AddTablet({Host: "a", PortMap: {"vt": 1}}, "")`)
 
+	// Immediately after AddTablet() there will be the first notification.
+	want := &TabletStats{
+		Key:     "a,vt:1",
+		Tablet:  tablet,
+		Target:  &querypb.Target{},
+		Up:      true,
+		Serving: false,
+	}
+	res := <-l.output
+	if !reflect.DeepEqual(res, want) {
+		t.Errorf(`<-l.output: %+v; want %+v`, res, want)
+	}
+
 	// one tablet after receiving a StreamHealthResponse
 	shr := &querypb.StreamHealthResponse{
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_MASTER},
@@ -47,7 +60,7 @@ func TestHealthCheck(t *testing.T) {
 		TabletExternallyReparentedTimestamp: 10,
 		RealtimeStats:                       &querypb.RealtimeStats{SecondsBehindMaster: 1, CpuUsage: 0.2},
 	}
-	want := &TabletStats{
+	want = &TabletStats{
 		Key:     "a,vt:1",
 		Tablet:  tablet,
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_MASTER},
@@ -58,7 +71,7 @@ func TestHealthCheck(t *testing.T) {
 	}
 	input <- shr
 	t.Logf(`input <- {{Keyspace: "k", Shard: "s", TabletType: MASTER}, Serving: true, TabletExternallyReparentedTimestamp: 10, {SecondsBehindMaster: 1, CpuUsage: 0.2}}`)
-	res := <-l.output
+	res = <-l.output
 	if !reflect.DeepEqual(res, want) {
 		t.Errorf(`<-l.output: %+v; want %+v`, res, want)
 	}
@@ -201,6 +214,19 @@ func TestHealthCheckCloseWaitsForGoRoutines(t *testing.T) {
 	hc.AddTablet(tablet, "")
 	t.Logf(`hc = HealthCheck(); hc.AddTablet({Host: "a", PortMap: {"vt": 1}}, "")`)
 
+	// Immediately after AddTablet() there will be the first notification.
+	want := &TabletStats{
+		Key:     "a,vt:1",
+		Tablet:  tablet,
+		Target:  &querypb.Target{},
+		Up:      true,
+		Serving: false,
+	}
+	res := <-l.output
+	if !reflect.DeepEqual(res, want) {
+		t.Errorf(`<-l.output: %+v; want %+v`, res, want)
+	}
+
 	// Verify that the listener works in general.
 	shr := &querypb.StreamHealthResponse{
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_MASTER},
@@ -208,7 +234,7 @@ func TestHealthCheckCloseWaitsForGoRoutines(t *testing.T) {
 		TabletExternallyReparentedTimestamp: 10,
 		RealtimeStats:                       &querypb.RealtimeStats{SecondsBehindMaster: 1, CpuUsage: 0.2},
 	}
-	want := &TabletStats{
+	want = &TabletStats{
 		Key:     "a,vt:1",
 		Tablet:  tablet,
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_MASTER},
@@ -219,7 +245,7 @@ func TestHealthCheckCloseWaitsForGoRoutines(t *testing.T) {
 	}
 	input <- shr
 	t.Logf(`input <- %v`, shr)
-	res := <-l.output
+	res = <-l.output
 	if !reflect.DeepEqual(res, want) {
 		t.Errorf(`<-l.output: %+v; want %+v`, res, want)
 	}
@@ -236,8 +262,15 @@ func TestHealthCheckCloseWaitsForGoRoutines(t *testing.T) {
 	// fail in some cases.
 	input <- shr
 	t.Logf(`input <- %v`, shr)
+
+	// After Close() we'll receive one or two notifications with Serving == false.
+	res = <-l.output
+	if res.Serving {
+		t.Errorf(`Received one more notification with Serving == true: %+v`, res)
+	}
+
 	select {
-	case res := <-l.output:
+	case res = <-l.output:
 		if res.TabletExternallyReparentedTimestamp == 10 && res.LastError == context.Canceled {
 			// HealthCheck repeats the previous stats if there is an error.
 			// This is expected.
@@ -247,6 +280,11 @@ func TestHealthCheckCloseWaitsForGoRoutines(t *testing.T) {
 	case <-time.After(1 * time.Millisecond):
 		// No response after timeout. Close probably closed all Go routines
 		// properly and won't use the listener anymore.
+	}
+
+	// The last notification should have Up = false.
+	if res.Up || res.Serving {
+		t.Errorf(`Last notification doesn't have Up == false and Serving == false: %+v`, res)
 	}
 
 	// Check if there are more updates than the one emitted during Close().
@@ -271,6 +309,19 @@ func TestHealthCheckTimeout(t *testing.T) {
 	hc.AddTablet(tablet, "")
 	t.Logf(`hc = HealthCheck(); hc.AddTablet({Host: "a", PortMap: {"vt": 1}}, "")`)
 
+	// Immediately after AddTablet() there will be the first notification.
+	want := &TabletStats{
+		Key:     "a,vt:1",
+		Tablet:  tablet,
+		Target:  &querypb.Target{},
+		Up:      true,
+		Serving: false,
+	}
+	res := <-l.output
+	if !reflect.DeepEqual(res, want) {
+		t.Errorf(`<-l.output: %+v; want %+v`, res, want)
+	}
+
 	// one tablet after receiving a StreamHealthResponse
 	shr := &querypb.StreamHealthResponse{
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_MASTER},
@@ -278,7 +329,7 @@ func TestHealthCheckTimeout(t *testing.T) {
 		TabletExternallyReparentedTimestamp: 10,
 		RealtimeStats:                       &querypb.RealtimeStats{SecondsBehindMaster: 1, CpuUsage: 0.2},
 	}
-	want := &TabletStats{
+	want = &TabletStats{
 		Key:     "a,vt:1",
 		Tablet:  tablet,
 		Target:  &querypb.Target{Keyspace: "k", Shard: "s", TabletType: topodatapb.TabletType_MASTER},
@@ -289,7 +340,7 @@ func TestHealthCheckTimeout(t *testing.T) {
 	}
 	input <- shr
 	t.Logf(`input <- {{Keyspace: "k", Shard: "s", TabletType: MASTER}, Serving: true, TabletExternallyReparentedTimestamp: 10, {SecondsBehindMaster: 1, CpuUsage: 0.2}}`)
-	res := <-l.output
+	res = <-l.output
 	if !reflect.DeepEqual(res, want) {
 		t.Errorf(`<-l.output: %+v; want %+v`, res, want)
 	}
@@ -348,7 +399,7 @@ type listener struct {
 }
 
 func newListener() *listener {
-	return &listener{output: make(chan *TabletStats, 1)}
+	return &listener{output: make(chan *TabletStats, 2)}
 }
 
 func (l *listener) StatsUpdate(ts *TabletStats) {
@@ -403,17 +454,17 @@ func (fc *fakeConn) StreamHealth(ctx context.Context) (tabletconn.StreamHealthRe
 }
 
 // Execute implements tabletconn.TabletConn.
-func (fc *fakeConn) Execute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, transactionID int64) (*sqltypes.Result, error) {
+func (fc *fakeConn) Execute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, transactionID int64, options *querypb.ExecuteOptions) (*sqltypes.Result, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
 // ExecuteBatch implements tabletconn.TabletConn.
-func (fc *fakeConn) ExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool, transactionID int64) ([]sqltypes.Result, error) {
+func (fc *fakeConn) ExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool, transactionID int64, options *querypb.ExecuteOptions) ([]sqltypes.Result, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
 // StreamExecute implements tabletconn.TabletConn.
-func (fc *fakeConn) StreamExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}) (sqltypes.ResultStream, error) {
+func (fc *fakeConn) StreamExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, options *querypb.ExecuteOptions) (sqltypes.ResultStream, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -432,23 +483,58 @@ func (fc *fakeConn) Rollback(ctx context.Context, target *querypb.Target, transa
 	return fmt.Errorf("not implemented")
 }
 
+// Prepare implements tabletconn.TabletConn.
+func (fc *fakeConn) Prepare(ctx context.Context, target *querypb.Target, transactionID int64, dtid string) (err error) {
+	return fmt.Errorf("not implemented")
+}
+
+// CommitPrepared implements tabletconn.TabletConn.
+func (fc *fakeConn) CommitPrepared(ctx context.Context, target *querypb.Target, dtid string) (err error) {
+	return fmt.Errorf("not implemented")
+}
+
+// RollbackPrepared implements tabletconn.TabletConn.
+func (fc *fakeConn) RollbackPrepared(ctx context.Context, target *querypb.Target, dtid string, originalID int64) (err error) {
+	return fmt.Errorf("not implemented")
+}
+
+// CreateTransaction implements tabletconn.TabletConn.
+func (fc *fakeConn) CreateTransaction(ctx context.Context, target *querypb.Target, dtid string, participants []*querypb.Target) (err error) {
+	return fmt.Errorf("not implemented")
+}
+
+// StartCommit implements tabletconn.TabletConn.
+func (fc *fakeConn) StartCommit(ctx context.Context, target *querypb.Target, transactionID int64, dtid string) (err error) {
+	return fmt.Errorf("not implemented")
+}
+
+// SetRollback implements tabletconn.TabletConn.
+func (fc *fakeConn) SetRollback(ctx context.Context, target *querypb.Target, dtid string, transactionID int64) (err error) {
+	return fmt.Errorf("not implemented")
+}
+
+// ConcludeTransaction implements tabletconn.TabletConn.
+func (fc *fakeConn) ConcludeTransaction(ctx context.Context, target *querypb.Target, dtid string) (err error) {
+	return fmt.Errorf("not implemented")
+}
+
+// ReadTransaction implements tabletconn.TabletConn.
+func (fc *fakeConn) ReadTransaction(ctx context.Context, target *querypb.Target, dtid string) (metadata *querypb.TransactionMetadata, err error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 // BeginExecute implements tabletconn.TabletConn.
-func (fc *fakeConn) BeginExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}) (*sqltypes.Result, int64, error) {
+func (fc *fakeConn) BeginExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, options *querypb.ExecuteOptions) (*sqltypes.Result, int64, error) {
 	return nil, 0, fmt.Errorf("not implemented")
 }
 
 // BeginExecuteBatch implements tabletconn.TabletConn.
-func (fc *fakeConn) BeginExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool) ([]sqltypes.Result, int64, error) {
+func (fc *fakeConn) BeginExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool, options *querypb.ExecuteOptions) ([]sqltypes.Result, int64, error) {
 	return nil, 0, fmt.Errorf("not implemented")
 }
 
 // SplitQuery implements tabletconn.TabletConn.
-func (fc *fakeConn) SplitQuery(ctx context.Context, target *querypb.Target, query querytypes.BoundQuery, splitColumn string, splitCount int64) ([]querytypes.QuerySplit, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-// SplitQueryV2 implements tabletconn.TabletConn.
-func (fc *fakeConn) SplitQueryV2(
+func (fc *fakeConn) SplitQuery(
 	ctx context.Context,
 	target *querypb.Target,
 	query querytypes.BoundQuery,
@@ -460,11 +546,17 @@ func (fc *fakeConn) SplitQueryV2(
 	return nil, fmt.Errorf("not implemented")
 }
 
+// UpdateStream implements tabletconn.TabletConn.
+func (fc *fakeConn) UpdateStream(ctx context.Context, target *querypb.Target, position string, timestamp int64) (tabletconn.StreamEventReader, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 // Tablet returns the tablet associated with the connection.
 func (fc *fakeConn) Tablet() *topodatapb.Tablet {
 	return fc.tablet
 }
 
 // Close closes the connection.
-func (fc *fakeConn) Close() {
+func (fc *fakeConn) Close(ctx context.Context) error {
+	return nil
 }

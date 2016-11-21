@@ -57,10 +57,6 @@ type node struct {
 	watches map[int]chan *topo.WatchData
 }
 
-func (n *node) isFile() bool {
-	return n.contents != nil
-}
-
 func (n *node) isDirectory() bool {
 	return n.children != nil
 }

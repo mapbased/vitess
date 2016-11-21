@@ -24,6 +24,7 @@ import (
 	"github.com/youtube/vitess/go/vt/topo"
 	"github.com/youtube/vitess/go/vt/topo/topoproto"
 	"github.com/youtube/vitess/go/vt/vtctl"
+	"github.com/youtube/vitess/go/vt/workflow"
 	"github.com/youtube/vitess/go/vt/wrangler"
 
 	logutilpb "github.com/youtube/vitess/go/vt/proto/logutil"
@@ -31,7 +32,8 @@ import (
 )
 
 var (
-	localCell = flag.String("cell", "", "cell to use")
+	localCell        = flag.String("cell", "", "cell to use")
+	showTopologyCRUD = flag.Bool("vtctld_show_topology_crud", true, "Controls the display of the CRUD topology actions in the vtctld UI.")
 )
 
 // This file implements a REST-style API for the vtctld web interface.
@@ -48,24 +50,36 @@ func httpErrorf(w http.ResponseWriter, r *http.Request, format string, args ...i
 	http.Error(w, errMsg, http.StatusInternalServerError)
 }
 
+func handleAPI(apiPath string, handlerFunc func(w http.ResponseWriter, r *http.Request) error) {
+	http.HandleFunc(apiPrefix+apiPath, func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if x := recover(); x != nil {
+				httpErrorf(w, r, "uncaught panic: %v", x)
+			}
+		}()
+		if err := handlerFunc(w, r); err != nil {
+			httpErrorf(w, r, "%v", err)
+		}
+	})
+}
+
 func handleCollection(collection string, getFunc func(*http.Request) (interface{}, error)) {
-	http.HandleFunc(apiPrefix+collection+"/", func(w http.ResponseWriter, r *http.Request) {
+	handleAPI(collection+"/", func(w http.ResponseWriter, r *http.Request) error {
 		// Get the requested object.
 		obj, err := getFunc(r)
 		if err != nil {
 			if err == topo.ErrNoNode {
 				http.NotFound(w, r)
-				return
+				return nil
 			}
-			httpErrorf(w, r, "can't get %v: %v", collection, err)
-			return
+			return fmt.Errorf("can't get %v: %v", collection, err)
 		}
 
 		// JSON marshals a nil slice as "null", but we prefer "[]".
 		if val := reflect.ValueOf(obj); val.Kind() == reflect.Slice && val.IsNil() {
 			w.Header().Set("Content-Type", jsonContentType)
 			w.Write([]byte("[]"))
-			return
+			return nil
 		}
 
 		// JSON encode response.
@@ -81,33 +95,25 @@ func handleCollection(collection string, getFunc func(*http.Request) (interface{
 			// mixed protobuf and non-protobuf).
 			// TODO(mberlin): Switch "EnumAsInts" to "false" once the frontend is
 			//                updated and mixed types will use jsonpb as well.
-
-			// jsonpb may panic if the "proto.Message" is an embedded field
-			// of "obj" and "obj" has non-exported fields. Return an error then.
-			defer func() {
-				if val := recover(); val != nil {
-					httpErrorf(w, r, "jsonpb panicked: %v", val)
-					return
-				}
-			}()
+			// Note: jsonpb may panic if the "proto.Message" is an embedded field
+			// of "obj" and "obj" has non-exported fields.
 
 			// Marshal the protobuf message.
 			var b bytes.Buffer
 			m := jsonpb.Marshaler{EnumsAsInts: true, EmitDefaults: true, Indent: "  ", OrigName: true}
 			if err := m.Marshal(&b, obj); err != nil {
-				httpErrorf(w, r, "jsonpb error: %v", err)
-				return
+				return fmt.Errorf("jsonpb error: %v", err)
 			}
 			data = b.Bytes()
 		default:
 			data, err = json.MarshalIndent(obj, "", "  ")
 			if err != nil {
-				httpErrorf(w, r, "json error: %v", err)
-				return
+				return fmt.Errorf("json error: %v", err)
 			}
 		}
 		w.Header().Set("Content-Type", jsonContentType)
 		w.Write(data)
+		return nil
 	})
 }
 
@@ -166,6 +172,9 @@ func initAPI(ctx context.Context, ts topo.Server, actions *ActionRepository, rea
 			}
 			// Get the keyspace record.
 			k, err := ts.GetKeyspace(ctx, keyspace)
+			if err != nil {
+				return nil, err
+			}
 			// Pass the embedded proto directly or jsonpb will panic.
 			return k.Keyspace, err
 			// Perform an action on a keyspace.
@@ -216,6 +225,9 @@ func initAPI(ctx context.Context, ts topo.Server, actions *ActionRepository, rea
 
 		// Get the shard record.
 		si, err := ts.GetShard(ctx, keyspace, shard)
+		if err != nil {
+			return nil, err
+		}
 		// Pass the embedded proto directly or jsonpb will panic.
 		return si.Shard, err
 	})
@@ -284,9 +296,17 @@ func initAPI(ctx context.Context, ts topo.Server, actions *ActionRepository, rea
 					return nil, err
 				}
 				if cell != "" {
-					return ts.FindAllTabletAliasesInShardByCell(ctx, keyspace, shard, []string{cell})
+					result, err := ts.FindAllTabletAliasesInShardByCell(ctx, keyspace, shard, []string{cell})
+					if err != nil && err != topo.ErrPartialResult {
+						return result, err
+					}
+					return result, nil
 				}
-				return ts.FindAllTabletAliasesInShard(ctx, keyspace, shard)
+				result, err := ts.FindAllTabletAliasesInShard(ctx, keyspace, shard)
+				if err != nil && err != topo.ErrPartialResult {
+					return result, err
+				}
+				return result, nil
 			}
 
 			// Get all tablets in a cell.
@@ -324,6 +344,9 @@ func initAPI(ctx context.Context, ts topo.Server, actions *ActionRepository, rea
 
 		// Get the tablet record.
 		t, err := ts.GetTablet(ctx, tabletAlias)
+		if err != nil {
+			return nil, err
+		}
 		// Pass the embedded proto directly or jsonpb will panic.
 		return t.Tablet, err
 	})
@@ -341,10 +364,25 @@ func initAPI(ctx context.Context, ts topo.Server, actions *ActionRepository, rea
 			cell := r.FormValue("cell")
 			tabletType := r.FormValue("type")
 			_, err := topoproto.ParseTabletType(tabletType)
-			if err != nil {
-				return nil, fmt.Errorf("invalid tablet type: %v ", tabletType)
+			// Excluding the case where parse fails because all tabletTypes was chosen.
+			if err != nil && tabletType != "all" {
+				return nil, fmt.Errorf("invalid tablet type: %v ", err)
 			}
 			metric := r.FormValue("metric")
+
+			// Setting default values if none was specified in the query params.
+			if keyspace == "" {
+				keyspace = "all"
+			}
+			if cell == "" {
+				cell = "all"
+			}
+			if tabletType == "" {
+				tabletType = "all"
+			}
+			if metric == "" {
+				metric = "health"
+			}
 
 			if realtimeStats == nil {
 				return nil, fmt.Errorf("realtimeStats not initialized")
@@ -391,11 +429,39 @@ func initAPI(ctx context.Context, ts topo.Server, actions *ActionRepository, rea
 		return tabletStat, nil
 	})
 
+	handleCollection("topology_info", func(r *http.Request) (interface{}, error) {
+		targetPath := getItemPath(r.URL.Path)
+
+		// Retrieving topology information (keyspaces, cells, and types) based on query params.
+		if targetPath == "" {
+			if err := r.ParseForm(); err != nil {
+				return nil, err
+			}
+			keyspace := r.FormValue("keyspace")
+			cell := r.FormValue("cell")
+
+			// Setting default values if none was specified in the query params.
+			if keyspace == "" {
+				keyspace = "all"
+			}
+			if cell == "" {
+				cell = "all"
+			}
+
+			if realtimeStats == nil {
+				return nil, fmt.Errorf("realtimeStats not initialized")
+			}
+
+			return realtimeStats.topologyInfo(keyspace, cell), nil
+		}
+		return nil, fmt.Errorf("invalid target path: %q  expected path: ?keyspace=<keyspace>&cell=<cell>", targetPath)
+	})
+
 	// Vtctl Command
-	http.HandleFunc(apiPrefix+"vtctl/", func(w http.ResponseWriter, r *http.Request) {
+	handleAPI("vtctl/", func(w http.ResponseWriter, r *http.Request) error {
 		if err := acl.CheckAccessHTTP(r, acl.ADMIN); err != nil {
-			httpErrorf(w, r, "Access denied")
-			return
+			http.Error(w, "403 Forbidden", http.StatusForbidden)
+			return nil
 		}
 		var args []string
 		resp := struct {
@@ -403,8 +469,7 @@ func initAPI(ctx context.Context, ts topo.Server, actions *ActionRepository, rea
 			Output string
 		}{}
 		if err := unmarshalRequest(r, &args); err != nil {
-			httpErrorf(w, r, "can't unmarshal request: %v", err)
-			return
+			return fmt.Errorf("can't unmarshal request: %v", err)
 		}
 
 		logstream := logutil.NewMemoryLogger()
@@ -418,26 +483,25 @@ func initAPI(ctx context.Context, ts topo.Server, actions *ActionRepository, rea
 		resp.Output = logstream.String()
 		data, err := json.MarshalIndent(resp, "", "  ")
 		if err != nil {
-			httpErrorf(w, r, "json error: %v", err)
-			return
+			return fmt.Errorf("json error: %v", err)
 		}
 		w.Header().Set("Content-Type", jsonContentType)
 		w.Write(data)
+		return nil
 	})
 
 	// Schema Change
-	http.HandleFunc(apiPrefix+"schema/apply", func(w http.ResponseWriter, r *http.Request) {
+	handleAPI("schema/apply", func(w http.ResponseWriter, r *http.Request) error {
 		if err := acl.CheckAccessHTTP(r, acl.ADMIN); err != nil {
-			httpErrorf(w, r, "Access denied")
-			return
+			http.Error(w, "403 Forbidden", http.StatusForbidden)
+			return nil
 		}
 		req := struct {
 			Keyspace, SQL       string
 			SlaveTimeoutSeconds int
 		}{}
 		if err := unmarshalRequest(r, &req); err != nil {
-			httpErrorf(w, r, "can't unmarshal request: %v", err)
-			return
+			return fmt.Errorf("can't unmarshal request: %v", err)
 		}
 		if req.SlaveTimeoutSeconds <= 0 {
 			req.SlaveTimeoutSeconds = 10
@@ -451,7 +515,29 @@ func initAPI(ctx context.Context, ts topo.Server, actions *ActionRepository, rea
 		executor := schemamanager.NewTabletExecutor(
 			wr, time.Duration(req.SlaveTimeoutSeconds)*time.Second)
 
-		schemamanager.Run(ctx,
+		return schemamanager.Run(ctx,
 			schemamanager.NewUIController(req.SQL, req.Keyspace, w), executor)
+	})
+
+	// Features
+	handleAPI("features", func(w http.ResponseWriter, r *http.Request) error {
+		if err := acl.CheckAccessHTTP(r, acl.ADMIN); err != nil {
+			http.Error(w, "403 Forbidden", http.StatusForbidden)
+			return nil
+		}
+
+		resp := make(map[string]interface{})
+		resp["activeReparents"] = !*vtctl.DisableActiveReparents
+		resp["showStatus"] = *enableRealtimeStats
+		resp["showTopologyCRUD"] = *showTopologyCRUD
+		resp["showWorkflows"] = *workflowManagerInit
+		resp["workflows"] = workflow.AvailableFactories()
+		data, err := json.MarshalIndent(resp, "", "  ")
+		if err != nil {
+			return fmt.Errorf("json error: %v", err)
+		}
+		w.Header().Set("Content-Type", jsonContentType)
+		w.Write(data)
+		return nil
 	})
 }

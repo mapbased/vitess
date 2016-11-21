@@ -7,13 +7,13 @@
 import base64
 import unittest
 
-from vtproto import topodata_pb2
-
-from vtdb import vtgate_client
-
 import environment
 import tablet
 import utils
+
+from vtproto import topodata_pb2
+
+from vtdb import vtgate_client
 
 # shards need at least 1 replica for semi-sync ACK, and 1 rdonly for SplitQuery.
 shard_0_master = tablet.Tablet()
@@ -110,7 +110,7 @@ class TestCustomSharding(unittest.TestCase):
 
     # start the first shard only for now
     shard_0_master.init_tablet(
-        'master',
+        'replica',
         keyspace='test_keyspace',
         shard='0',
         tablet_index=0)
@@ -127,13 +127,9 @@ class TestCustomSharding(unittest.TestCase):
 
     for t in [shard_0_master, shard_0_replica, shard_0_rdonly]:
       t.create_db('vt_test_keyspace')
-    shard_0_master.start_vttablet(wait_for_state=None)
-    shard_0_replica.start_vttablet(wait_for_state=None)
-    shard_0_rdonly.start_vttablet(wait_for_state=None)
+      t.start_vttablet(wait_for_state=None)
 
-    for t in [shard_0_master]:
-      t.wait_for_vttablet_state('SERVING')
-    for t in [shard_0_replica, shard_0_rdonly]:
+    for t in [shard_0_master, shard_0_replica, shard_0_rdonly]:
       t.wait_for_vttablet_state('NOT_SERVING')
 
     utils.run_vtctl(['InitShardMaster', '-force', 'test_keyspace/0',
@@ -162,7 +158,7 @@ primary key (id)
 
     # create shard 1
     shard_1_master.init_tablet(
-        'master',
+        'replica',
         keyspace='test_keyspace',
         shard='1',
         tablet_index=0)
@@ -179,13 +175,9 @@ primary key (id)
 
     for t in [shard_1_master, shard_1_replica, shard_1_rdonly]:
       t.create_db('vt_test_keyspace')
-    shard_1_master.start_vttablet(wait_for_state=None)
-    shard_1_replica.start_vttablet(wait_for_state=None)
-    shard_1_rdonly.start_vttablet(wait_for_state=None)
+      t.start_vttablet(wait_for_state=None)
 
-    for t in [shard_1_master]:
-      t.wait_for_vttablet_state('SERVING')
-    for t in [shard_1_replica, shard_1_rdonly]:
+    for t in [shard_1_master, shard_1_replica, shard_1_rdonly]:
       t.wait_for_vttablet_state('NOT_SERVING')
 
     s = utils.run_vtctl_json(['GetShard', 'test_keyspace/1'])
@@ -277,8 +269,6 @@ primary key (id)
       expected[200 + i] = 'row %d' % (200 + i)
     self.assertEqual(rows, expected)
 
-    self._test_vtclient_execute_shards_fallback()
-
   def _check_shards_count_in_srv_keyspace(self, shard_count):
     ks = utils.run_vtctl_json(['GetSrvKeyspace', 'test_nj', 'test_keyspace'])
     check_types = set([topodata_pb2.MASTER, topodata_pb2.REPLICA,
@@ -292,34 +282,6 @@ primary key (id)
                      'The number of expected shard_references in GetSrvKeyspace'
                      ' was not equal %d for all expected tablet types.'
                      % shard_count)
-
-  def _test_vtclient_execute_shards_fallback(self):
-    """Test per-shard mode of Go SQL driver (through vtclient)."""
-    for shard in [0, 1]:
-      id_val = (shard + 1) * 1000  # example: 1000, 2000
-      name_val = 'row %d' % id_val
-
-      # write
-      utils.vtgate.vtclient('insert into data(id, name) values (:v1, :v2)',
-                            bindvars=[id_val, name_val],
-                            keyspace='test_keyspace', shard=str(shard))
-
-      want = {
-          u'fields': [u'id', u'name'],
-          u'rows': [[unicode(id_val), unicode(name_val)]]
-          }
-      # read non-streaming
-      out, _ = utils.vtgate.vtclient(
-          'select * from data where id = :v1', bindvars=[id_val],
-          keyspace='test_keyspace', shard=str(shard), json_output=True)
-      self.assertEqual(out, want)
-
-      # read streaming
-      out, _ = utils.vtgate.vtclient(
-          'select * from data where id = :v1', bindvars=[id_val],
-          keyspace='test_keyspace', shard=str(shard), streaming=True,
-          json_output=True)
-      self.assertEqual(out, want)
 
 
 if __name__ == '__main__':

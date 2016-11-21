@@ -72,10 +72,6 @@ func TestGRPCDiscovery(t *testing.T) {
 
 	// run the test suite.
 	TestSuite(t, "discovery-grpc", dg, service)
-
-	// run it again with vtgate combining Begin and Execute
-	flag.Set("tablet_grpc_combine_begin_execute", "true")
-	TestSuite(t, "discovery-grpc-combo", dg, service)
 }
 
 // TestL2VTGateDiscovery tests the l2vtgate gateway with a gRPC
@@ -105,7 +101,7 @@ func TestL2VTGateDiscovery(t *testing.T) {
 	// L2VTGate: Create the discovery healthcheck, and the gateway.
 	// Wait for the right tablets to be present.
 	hc := discovery.NewHealthCheck(30*time.Second, 10*time.Second, 2*time.Minute)
-	l2vtgate := l2vtgate.Init(hc, ts, ts, cell, 2, nil)
+	l2vtgate := l2vtgate.Init(hc, ts, ts, "", cell, 2, nil)
 	hc.AddTablet(&topodatapb.Tablet{
 		Alias: &topodatapb.TabletAlias{
 			Cell: cell,

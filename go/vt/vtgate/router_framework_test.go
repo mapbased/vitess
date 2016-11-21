@@ -8,7 +8,6 @@ import (
 	"github.com/youtube/vitess/go/sqltypes"
 	"github.com/youtube/vitess/go/vt/discovery"
 	"github.com/youtube/vitess/go/vt/tabletserver/sandboxconn"
-	"github.com/youtube/vitess/go/vt/topo"
 	"golang.org/x/net/context"
 
 	topodatapb "github.com/youtube/vitess/go/vt/proto/topodata"
@@ -162,7 +161,7 @@ func createRouterEnv() (router *Router, sbc1, sbc2, sbclookup *sandboxconn.Sandb
 	s := createSandbox("TestRouter")
 	s.VSchema = routerVSchema
 	serv := new(sandboxTopo)
-	scatterConn := NewScatterConn(hc, topo.Server{}, serv, "", cell, 10, nil)
+	scatterConn := newTestScatterConn(hc, serv, cell)
 	sbc1 = hc.AddTestTablet(cell, "-20", 1, "TestRouter", "-20", topodatapb.TabletType_MASTER, true, 1, nil)
 	sbc2 = hc.AddTestTablet(cell, "40-60", 1, "TestRouter", "40-60", topodatapb.TabletType_MASTER, true, 1, nil)
 
@@ -185,12 +184,13 @@ func routerExec(router *Router, sql string, bv map[string]interface{}) (*sqltype
 		"",
 		topodatapb.TabletType_MASTER,
 		nil,
-		false)
+		false,
+		nil)
 }
 
 func routerStream(router *Router, sql string) (qr *sqltypes.Result, err error) {
 	results := make(chan *sqltypes.Result, 10)
-	err = router.StreamExecute(context.Background(), sql, nil, "", topodatapb.TabletType_MASTER, func(qr *sqltypes.Result) error {
+	err = router.StreamExecute(context.Background(), sql, nil, "", topodatapb.TabletType_MASTER, nil, func(qr *sqltypes.Result) error {
 		results <- qr
 		return nil
 	})

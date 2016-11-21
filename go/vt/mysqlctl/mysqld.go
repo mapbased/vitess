@@ -30,7 +30,6 @@ import (
 	"github.com/youtube/vitess/go/mysql"
 	"github.com/youtube/vitess/go/sqldb"
 	"github.com/youtube/vitess/go/stats"
-	"github.com/youtube/vitess/go/vt/dbconfigs"
 	"github.com/youtube/vitess/go/vt/dbconnpool"
 	vtenv "github.com/youtube/vitess/go/vt/env"
 	"github.com/youtube/vitess/go/vt/hook"
@@ -52,14 +51,16 @@ var (
 
 // Mysqld is the object that represents a mysqld daemon running on this server.
 type Mysqld struct {
-	config        *Mycnf
-	dba           *sqldb.ConnParams
-	dbApp         *sqldb.ConnParams
-	dbaPool       *dbconnpool.ConnectionPool
-	appPool       *dbconnpool.ConnectionPool
-	replParams    *sqldb.ConnParams
-	dbaMysqlStats *stats.Timings
-	tabletDir     string
+	config             *Mycnf
+	dba                *sqldb.ConnParams
+	allprivs           *sqldb.ConnParams
+	dbApp              *sqldb.ConnParams
+	dbaPool            *dbconnpool.ConnectionPool
+	appPool            *dbconnpool.ConnectionPool
+	replParams         *sqldb.ConnParams
+	dbaMysqlStats      *stats.Timings
+	allprivsMysqlStats *stats.Timings
+	tabletDir          string
 
 	// mutex protects the fields below.
 	mutex         sync.Mutex
@@ -70,43 +71,52 @@ type Mysqld struct {
 
 // NewMysqld creates a Mysqld object based on the provided configuration
 // and connection parameters.
-// dbaName and appName are the base for stats exports, use 'Dba' and 'App', except in tests
-func NewMysqld(dbaName, appName string, config *Mycnf, dba, app, repl *sqldb.ConnParams) *Mysqld {
-	if *dba == dbconfigs.DefaultDBConfigs.Dba {
+func NewMysqld(config *Mycnf, dba, allprivs, app, repl *sqldb.ConnParams, enablePublishStats bool) *Mysqld {
+	noParams := sqldb.ConnParams{}
+	if *dba == noParams {
 		dba.UnixSocket = config.SocketFile
 	}
 
 	// create and open the connection pool for dba access
 	dbaMysqlStatsName := ""
 	dbaPoolName := ""
-	if dbaName != "" {
-		dbaMysqlStatsName = "Mysql" + dbaName
-		dbaPoolName = dbaName + "ConnPool"
+	if enablePublishStats {
+		dbaMysqlStatsName = "MysqlDba"
+		dbaPoolName = "DbaConnPool"
 	}
 	dbaMysqlStats := stats.NewTimings(dbaMysqlStatsName)
 	dbaPool := dbconnpool.NewConnectionPool(dbaPoolName, *dbaPoolSize, *dbaIdleTimeout)
 	dbaPool.Open(dbconnpool.DBConnectionCreator(dba, dbaMysqlStats))
 
+	// create and open the connection pool for allprivs access
+	allprivsMysqlStatsName := ""
+	if enablePublishStats {
+		allprivsMysqlStatsName = "MysqlAllPrivs"
+	}
+	allprivsMysqlStats := stats.NewTimings(allprivsMysqlStatsName)
+
 	// create and open the connection pool for app access
 	appMysqlStatsName := ""
 	appPoolName := ""
-	if appName != "" {
-		appMysqlStatsName = "Mysql" + appName
-		appPoolName = appName + "ConnPool"
+	if enablePublishStats {
+		appMysqlStatsName = "MysqlApp"
+		appPoolName = "AppConnPool"
 	}
 	appMysqlStats := stats.NewTimings(appMysqlStatsName)
 	appPool := dbconnpool.NewConnectionPool(appPoolName, *appPoolSize, *appIdleTimeout)
 	appPool.Open(dbconnpool.DBConnectionCreator(app, appMysqlStats))
 
 	return &Mysqld{
-		config:        config,
-		dba:           dba,
-		dbApp:         app,
-		dbaPool:       dbaPool,
-		appPool:       appPool,
-		replParams:    repl,
-		dbaMysqlStats: dbaMysqlStats,
-		tabletDir:     path.Dir(config.DataDir),
+		config:             config,
+		dba:                dba,
+		allprivs:           allprivs,
+		dbApp:              app,
+		dbaPool:            dbaPool,
+		appPool:            appPool,
+		replParams:         repl,
+		dbaMysqlStats:      dbaMysqlStats,
+		allprivsMysqlStats: allprivsMysqlStats,
+		tabletDir:          path.Dir(config.DataDir),
 	}
 }
 
@@ -348,8 +358,12 @@ func (mysqld *Mysqld) Shutdown(ctx context.Context, waitForMysqld bool) error {
 			return err
 		}
 		arg := []string{
-			"-u", mysqld.dba.Uname, "-S", mysqld.config.SocketFile,
-			"shutdown"}
+			"-u", mysqld.dba.Uname, "-S", mysqld.config.SocketFile}
+		if mysqld.dba.Pass != "" {
+			// -p must be omitted entirely if empty, or else it will prompt.
+			arg = append(arg, "-p"+mysqld.dba.Pass)
+		}
+		arg = append(arg, "shutdown")
 		env := []string{
 			os.ExpandEnv("LD_LIBRARY_PATH=$VT_MYSQL_ROOT/lib/mysql"),
 		}
@@ -462,7 +476,7 @@ func (mysqld *Mysqld) Init(ctx context.Context, initDBSQLFile string) error {
 		return fmt.Errorf("can't open init_db_sql_file (%v): %v", initDBSQLFile, err)
 	}
 	defer sqlFile.Close()
-	if err := mysqld.executeMysqlScript("root", sqlFile); err != nil {
+	if err := mysqld.executeMysqlScript(&sqldb.ConnParams{Uname: "root", Pass: ""}, sqlFile); err != nil {
 		return fmt.Errorf("can't run init_db_sql_file (%v): %v", initDBSQLFile, err)
 	}
 
@@ -673,12 +687,12 @@ func deleteTopDir(dir string) (removalErr error) {
 
 // executeMysqlCommands executes some SQL commands,
 // using the mysql command line tool.
-func (mysqld *Mysqld) executeMysqlCommands(user, sql string) error {
-	return mysqld.executeMysqlScript(user, strings.NewReader(sql))
+func (mysqld *Mysqld) executeMysqlCommands(connParams *sqldb.ConnParams, sql string) error {
+	return mysqld.executeMysqlScript(connParams, strings.NewReader(sql))
 }
 
 // executeMysqlScript executes a .sql script file with the mysql command line tool.
-func (mysqld *Mysqld) executeMysqlScript(user string, sql io.Reader) error {
+func (mysqld *Mysqld) executeMysqlScript(connParams *sqldb.ConnParams, sql io.Reader) error {
 	dir, err := vtenv.VtMysqlRoot()
 	if err != nil {
 		return err
@@ -687,7 +701,11 @@ func (mysqld *Mysqld) executeMysqlScript(user string, sql io.Reader) error {
 	if err != nil {
 		return err
 	}
-	arg := []string{"--batch", "-u", user, "-S", mysqld.config.SocketFile}
+	arg := []string{"--batch", "-u", connParams.Uname, "-S", mysqld.config.SocketFile}
+	if connParams.Pass != "" {
+		// -p must be omitted entirely if empty, or else it will prompt.
+		arg = append(arg, "-p"+connParams.Pass)
+	}
 	env := []string{
 		"LD_LIBRARY_PATH=" + path.Join(dir, "lib/mysql"),
 	}
@@ -707,6 +725,11 @@ func (mysqld *Mysqld) GetAppConnection(ctx context.Context) (dbconnpool.PoolConn
 // GetDbaConnection creates a new DBConnection.
 func (mysqld *Mysqld) GetDbaConnection() (*dbconnpool.DBConnection, error) {
 	return dbconnpool.NewDBConnection(mysqld.dba, mysqld.dbaMysqlStats)
+}
+
+// GetAllPrivsConnection creates a new DBConnection.
+func (mysqld *Mysqld) GetAllPrivsConnection() (*dbconnpool.DBConnection, error) {
+	return dbconnpool.NewDBConnection(mysqld.allprivs, mysqld.allprivsMysqlStats)
 }
 
 // Close will close this instance of Mysqld. It will wait for all dba

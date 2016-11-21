@@ -1,8 +1,8 @@
 # Site wide configuration
 
 title: Vitess
-description: "Servers and tools that scale MySQL databases for the web in cloud architectures or on dedicated hardware."
-logo: vitess-logo-large-cropped-2.png
+description: "Vitess is a database clustering system for horizontal scaling of MySQL."
+logo: vitess_logomark_cropped.svg
 teaser: 400x250.gif
 locale: en_US
 url: http://vitess.io

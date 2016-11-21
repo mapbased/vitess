@@ -12,6 +12,12 @@ import (
 	"github.com/youtube/vitess/go/vt/vtgate/vindexes"
 )
 
+// These values dictate the state of the symtab.
+const (
+	symtabNormal = iota
+	symtabOrderBy
+)
+
 // symtab contains the symbols for a SELECT statement.
 // In the case of a subquery, the symtab points to the
 // symtab of the outer query. The symtab evolves over time,
@@ -47,6 +53,7 @@ import (
 // keep track of every symtab created, and recursively chase them
 // down every time a subquery merges with an outer query.
 type symtab struct {
+	state   int
 	tables  []*tabsym
 	Colsyms []*colsym
 	Externs []*sqlparser.ColName
@@ -62,11 +69,14 @@ func newSymtab(vschema VSchema) *symtab {
 	}
 }
 
+// SetState updates the state and returns the previous state.
+func (st *symtab) SetState(state int) int {
+	state, st.state = st.state, state
+	return state
+}
+
 // AddAlias adds a table alias to symtab.
-func (st *symtab) AddAlias(alias, astName sqlparser.TableIdent, table *vindexes.Table, rb *route) error {
-	if found := st.findTable(alias); found != nil {
-		return fmt.Errorf("duplicate symbol: %s", alias)
-	}
+func (st *symtab) AddAlias(alias, astName sqlparser.TableIdent, table *vindexes.Table, rb *route) {
 	st.tables = append(st.tables, &tabsym{
 		Alias:          alias,
 		ASTName:        astName,
@@ -75,7 +85,6 @@ func (st *symtab) AddAlias(alias, astName sqlparser.TableIdent, table *vindexes.
 		Keyspace:       table.Keyspace,
 		ColumnVindexes: table.ColumnVindexes,
 	})
-	return nil
 }
 
 // Merge merges the new symtab into the current one.
@@ -138,48 +147,75 @@ func (st *symtab) Find(col *sqlparser.ColName, autoResolve bool) (rb *route, isL
 		return m.Route(), m.Symtab() == st, nil
 	}
 	if len(st.Colsyms) != 0 {
-		name := sqlparser.String(col)
-		starname := sqlparser.String(&sqlparser.ColName{
-			Name:      sqlparser.NewColIdent("*"),
-			Qualifier: col.Qualifier,
-		})
-		for _, colsym := range st.Colsyms {
-			if colsym.Alias.EqualString(name) || colsym.Alias.EqualString(starname) || colsym.Alias.EqualString("*") {
-				col.Metadata = colsym
-				return colsym.Route(), true, nil
-			}
+		rb, err = st.searchColsyms(col)
+		switch {
+		case err != nil:
+			return nil, false, err
+		case rb != nil:
+			return rb, true, nil
+		case st.state == symtabNormal:
+			goto checkOuter
 		}
-		if st.Outer != nil {
-			// autoResolve only allowed for innermost scope.
-			rb, _, err = st.Outer.Find(col, false)
-			if err == nil {
-				st.Externs = append(st.Externs, col)
-			}
-			return rb, false, err
-		}
+	}
+	if rb = st.searchTables(col, autoResolve); rb != nil {
+		return rb, true, nil
+	}
+
+checkOuter:
+	if st.Outer == nil {
 		return nil, false, fmt.Errorf("symbol %s not found", sqlparser.String(col))
 	}
+	// autoResolve only allowed for innermost scope.
+	if rb, _, err = st.Outer.Find(col, false); err != nil {
+		return nil, false, err
+	}
+	st.Externs = append(st.Externs, col)
+	return rb, false, nil
+}
+
+func (st *symtab) searchColsyms(col *sqlparser.ColName) (rb *route, err error) {
+	name := sqlparser.String(col)
+	var cursym *colsym
+	for _, colsym := range st.Colsyms {
+		if colsym.Alias.EqualString("*") {
+			col.Metadata = colsym
+			return colsym.Route(), nil
+		}
+		if colsym.Alias.EqualString(name) {
+			if cursym != nil {
+				return nil, fmt.Errorf("ambiguous symbol reference: %v", sqlparser.String(col))
+			}
+			cursym = colsym
+			col.Metadata = colsym
+		}
+	}
+	if cursym != nil {
+		return cursym.Route(), nil
+	}
+	starname := sqlparser.String(&sqlparser.ColName{
+		Name:      sqlparser.NewColIdent("*"),
+		Qualifier: col.Qualifier,
+	})
+	for _, colsym := range st.Colsyms {
+		if colsym.QualifiedName.EqualString(name) || colsym.QualifiedName.EqualString(starname) {
+			col.Metadata = colsym
+			return colsym.Route(), nil
+		}
+	}
+	return nil, nil
+}
+
+func (st *symtab) searchTables(col *sqlparser.ColName, autoResolve bool) *route {
 	qualifier := sqlparser.TableIdent(sqlparser.String(col.Qualifier))
 	if qualifier == "" && autoResolve && len(st.tables) == 1 {
-		for _, t := range st.tables {
-			qualifier = t.Alias
-			break
-		}
+		qualifier = st.tables[0].Alias
 	}
 	alias := st.findTable(qualifier)
 	if alias == nil {
-		if st.Outer != nil {
-			// autoResolve only allowed for innermost scope.
-			rb, _, err = st.Outer.Find(col, false)
-			if err == nil {
-				st.Externs = append(st.Externs, col)
-			}
-			return rb, false, err
-		}
-		return nil, false, fmt.Errorf("symbol %s not found", sqlparser.String(col))
+		return nil
 	}
 	col.Metadata = alias
-	return alias.Route(), true, nil
+	return alias.Route()
 }
 
 // Vindex returns the vindex if the expression is a plain column reference
@@ -269,13 +305,26 @@ func (t *tabsym) FindVindex(name sqlparser.ColIdent) vindexes.Vindex {
 // a tabsym, colsym also contains a backpointer to the symtab,
 // and a pointer to the route that would compute or fetch this value.
 // In the future, it could point to primitives other than a route.
-// A colsym may not have an alias, in which case, it cannot be referenced
-// by ohter parts of the query.
 // If the expression is a plain column reference, then the 'Underlying' field
 // is set to the column it refers. If the referenced column has a Vindex,
 // the Vindex field is also accordingly set.
 type colsym struct {
-	Alias      sqlparser.ColIdent
+	// Alias will represent the unqualified symbol name for that expression.
+	// If the statement provides an explicit alias, that name will be used.
+	// Otherwise, one will be generated. If the expression is a simple
+	// column, then the base name of the column will be used as the alias.
+	Alias sqlparser.ColIdent
+
+	// QualfiedName will represent the fully qualified column name,
+	// if the expression is a simple column reference. If the column
+	// expression does not reference a table (or alias), a fully
+	// qualified name will be generated based on the table alias
+	// the column references.
+	// Alias or QualifiedName or both could be blank if such names
+	// could not be generated. If so, those expressions cannot be
+	// referenced by other clauses of the SQL statement.
+	QualifiedName sqlparser.ColIdent
+
 	route      *route
 	symtab     *symtab
 	Underlying colref

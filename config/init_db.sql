@@ -44,6 +44,14 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, PROCESS, FILE,
   SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER
   ON *.* TO 'vt_app'@'localhost';
 
+# User for administrative operations that need to be executed as non-SUPER.
+# Same permissions as vt_app here.
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, PROCESS, FILE,
+  REFERENCES, INDEX, ALTER, SHOW DATABASES, CREATE TEMPORARY TABLES,
+  LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW,
+  SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER
+  ON *.* TO 'vt_allprivs'@'localhost';
+
 # User for slave replication connections.
 GRANT REPLICATION SLAVE ON *.* TO 'vt_repl'@'%';
 
@@ -56,7 +64,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, PROCESS, FILE,
   ON *.* TO 'vt_filtered'@'localhost';
 
 # User for Orchestrator (https://github.com/outbrain/orchestrator).
-GRANT SUPER, PROCESS, REPLICATION SLAVE
+GRANT SUPER, PROCESS, REPLICATION SLAVE, RELOAD
   ON *.* TO 'orc_client_user'@'%' IDENTIFIED BY 'orc_client_user_password';
 GRANT SELECT
   ON _vt.* TO 'orc_client_user'@'%' IDENTIFIED BY 'orc_client_user_password';

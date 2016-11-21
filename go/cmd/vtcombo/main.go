@@ -53,7 +53,7 @@ func main() {
 	defer exit.Recover()
 
 	// flag parsing
-	flags := dbconfigs.AppConfig | dbconfigs.DbaConfig |
+	flags := dbconfigs.AppConfig | dbconfigs.AllPrivsConfig | dbconfigs.DbaConfig |
 		dbconfigs.FilteredConfig | dbconfigs.ReplConfig
 	dbconfigs.RegisterFlags(flags)
 	mysqlctl.RegisterFlags()
@@ -81,8 +81,11 @@ func main() {
 
 	// vtctld UI requires the cell flag
 	flag.Set("cell", tpb.Cells[0])
+	flag.Set("enable_realtime_stats", "true")
+	flag.Set("log_dir", "$VTDATAROOT/tmp")
 
 	// create zk client config file
+	os.MkdirAll(path.Join(os.Getenv("VTDATAROOT"), "vt_0000000001/tmp"), 0777)
 	config := path.Join(os.Getenv("VTDATAROOT"), "vt_0000000001/tmp/test-zk-client-conf.json")
 	cellmap := make(map[string]string)
 	for _, cell := range tpb.Cells {
@@ -122,7 +125,7 @@ func main() {
 	if err != nil {
 		log.Warning(err)
 	}
-	mysqld := mysqlctl.NewMysqld("Dba", "App", mycnf, &dbcfgs.Dba, &dbcfgs.App.ConnParams, &dbcfgs.Repl)
+	mysqld := mysqlctl.NewMysqld(mycnf, &dbcfgs.Dba, &dbcfgs.AllPrivs, &dbcfgs.App, &dbcfgs.Repl, true /* enablePublishStats */)
 	servenv.OnClose(mysqld.Close)
 
 	// tablets configuration and init

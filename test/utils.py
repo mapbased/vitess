@@ -17,6 +17,8 @@ import time
 import unittest
 import urllib2
 
+from vtdb import prefer_vtroot_imports  # pylint: disable=unused-import
+
 import environment
 from mysql_flavor import mysql_flavor
 from mysql_flavor import set_mysql_flavor
@@ -545,7 +547,6 @@ class VtGate(object):
         '-log_dir', environment.vtlogroot,
         '-srv_topo_cache_ttl', cache_ttl,
         '-tablet_protocol', protocols_flavor().tabletconn_protocol(),
-        '-tablet_grpc_combine_begin_execute',
     ]
     if l2vtgates:
       args.extend([
@@ -623,7 +624,7 @@ class VtGate(object):
     """Returns the vars for this process."""
     return get_vars(self.port)
 
-  def vtclient(self, sql, keyspace=None, shard=None, tablet_type='master',
+  def vtclient(self, sql, keyspace=None, tablet_type='master',
                bindvars=None, streaming=False,
                verbose=False, raise_on_error=True, json_output=False):
     """Uses the vtclient binary to send a query to vtgate."""
@@ -636,8 +637,6 @@ class VtGate(object):
       args.append('-json')
     if keyspace:
       args.extend(['-keyspace', keyspace])
-    if shard:
-      args.extend(['-shard', shard])
     if bindvars:
       args.extend(['-bind_variables', json.dumps(bindvars)])
     if streaming:
@@ -651,14 +650,27 @@ class VtGate(object):
       return json.loads(out), err
     return out, err
 
-  def execute(self, sql, tablet_type='master', bindvars=None):
-    """Uses 'vtctl VtGateExecute' to execute a command."""
+  def execute(self, sql, tablet_type='master', bindvars=None,
+              execute_options=None):
+    """Uses 'vtctl VtGateExecute' to execute a command.
+
+    Args:
+      sql: the command to execute.
+      tablet_type: the tablet_type to use.
+      bindvars: a dict of bind variables.
+      execute_options: proto-encoded ExecuteOptions object.
+
+    Returns:
+      the result of running vtctl command.
+    """
     _, addr = self.rpc_endpoint()
     args = ['VtGateExecute', '-json',
             '-server', addr,
             '-tablet_type', tablet_type]
     if bindvars:
       args.extend(['-bind_variables', json.dumps(bindvars)])
+    if execute_options:
+      args.extend(['-options', execute_options])
     args.append(sql)
     return run_vtctl_json(args)
 
@@ -728,7 +740,6 @@ class L2VtGate(object):
         '-healthcheck_conn_timeout', healthcheck_conn_timeout,
         '-tablet_protocol', protocols_flavor().tabletconn_protocol(),
         '-gateway_implementation', vtgate_gateway_flavor().flavor(),
-        '-tablet_grpc_combine_begin_execute',
     ]
     args.extend(vtgate_gateway_flavor().flags(cell=cell, tablets=tablets))
     if tablet_types_to_wait:
@@ -795,12 +806,14 @@ class L2VtGate(object):
     Args:
       name: name of the endpoint, in the form: 'keyspace.shard.type'.
     """
+    def condition(v):
+      return (v.get(vtgate_gateway_flavor().connection_count_vars())
+              .get(name, None)) is None
+
     poll_for_vars('l2vtgate', self.port,
                   'no endpoint named ' + name,
                   timeout=5.0,
-                  condition_fn=lambda v: v.get(vtgate_gateway_flavor().
-                                               connection_count_vars()).
-                  get(name, None) is None)
+                  condition_fn=condition)
 
 
 # vtctl helpers
@@ -851,6 +864,10 @@ def run_vtctl_vtctl(clargs, auto_log=False, expect_fail=False,
   args.extend(['-throttler_client_protocol',
                protocols_flavor().throttler_client_protocol()])
   args.extend(['-vtgate_protocol', protocols_flavor().vtgate_protocol()])
+  # TODO(b/26388813): Remove the next two lines once vtctl WaitForDrain is
+  #                   integrated in the vtctl MigrateServed* commands.
+  args.extend(['--wait_for_drain_sleep_rdonly', '0s'])
+  args.extend(['--wait_for_drain_sleep_replica', '0s'])
 
   if auto_log:
     args.append('--stderrthreshold=%s' % get_log_level())
@@ -954,11 +971,13 @@ def run_vtworker_client_bg(args, rpc_port):
     proc: process returned by subprocess.Popen
   """
   return run_bg(
-      environment.binary_args('vtworkerclient') +
-      ['-vtworker_client_protocol',
-       protocols_flavor().vtworker_client_protocol(),
-       '-server', 'localhost:%d' % rpc_port,
-       '-stderrthreshold', get_log_level()] + args)
+      environment.binary_args('vtworkerclient') + [
+          '-log_dir', environment.vtlogroot,
+          '-vtworker_client_protocol',
+          protocols_flavor().vtworker_client_protocol(),
+          '-server', 'localhost:%d' % rpc_port,
+          '-stderrthreshold', get_log_level(),
+      ] + args)
 
 
 def run_automation_server(auto_log=False):
@@ -1205,10 +1224,15 @@ class Vtctld(object):
       self.grpc_port = environment.reserve_ports(1)
 
   def start(self, enable_schema_change_dir=False):
+    # Note the vtctld2 web dir is set to 'dist', which is populated
+    # when a toplevel 'make build_web' is run. This is meant to test
+    # the development version of the UI. The real checked-in app is in
+    # app/.
     args = environment.binary_args('vtctld') + [
         '-enable_queries',
         '-cell', 'test_nj',
         '-web_dir', environment.vttop + '/web/vtctld',
+        '-web_dir2', environment.vttop + '/web/vtctld2/dist',
         '--log_dir', environment.vtlogroot,
         '--port', str(self.port),
         '-tablet_manager_protocol',
@@ -1217,7 +1241,13 @@ class Vtctld(object):
         '-throttler_client_protocol',
         protocols_flavor().throttler_client_protocol(),
         '-vtgate_protocol', protocols_flavor().vtgate_protocol(),
+        '-workflow_manager_init',
+        '-workflow_manager_use_election',
     ] + environment.topo_server().flags()
+    # TODO(b/26388813): Remove the next two lines once vtctl WaitForDrain is
+    #                   integrated in the vtctl MigrateServed* commands.
+    args.extend(['--wait_for_drain_sleep_rdonly', '0s'])
+    args.extend(['--wait_for_drain_sleep_replica', '0s'])
     if enable_schema_change_dir:
       args += [
           '--schema_change_dir', self.schema_change_dir,

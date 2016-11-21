@@ -85,7 +85,7 @@ class Tablet(object):
       'EXPERIMENTAL': 5,
       'BACKUP': 6,
       'RESTORE': 7,
-      'WORKER': 8,
+      'DRAINED': 8,
   }
 
   def __init__(self, tablet_uid=None, port=None, mysql_port=None, cell=None,
@@ -117,13 +117,6 @@ class Tablet(object):
   def __str__(self):
     return 'tablet: uid: %d web: http://localhost:%d/ rpc port: %d' % (
         self.tablet_uid, self.port, self.grpc_port)
-
-  def update_stream_python_endpoint(self):
-    protocol = protocols_flavor().binlog_player_python_protocol()
-    port = self.port
-    if protocol == 'grpc':
-      port = self.grpc_port
-    return (protocol, 'localhost:%d' % port)
 
   def mysqlctl(self, cmd, extra_my_cnf=None, with_ports=False, verbose=False):
     """Runs a mysqlctl command.
@@ -202,8 +195,8 @@ class Tablet(object):
       return self.shutdown_mysql()
     return self.mysqlctl(['teardown', '-force'])
 
-  def remove_tree(self):
-    if utils.options.keep_logs:
+  def remove_tree(self, ignore_options=False):
+    if not ignore_options and utils.options.keep_logs:
       return
     try:
       shutil.rmtree(self.tablet_dir)
@@ -308,7 +301,8 @@ class Tablet(object):
     rows = self.mquery('', 'show databases')
     for row in rows:
       dbname = row[0]
-      if dbname in ['information_schema', 'performance_schema', 'mysql', 'sys', '_vt']:
+      if dbname in ['information_schema', 'performance_schema', 'mysql', 'sys',
+                    '_vt']:
         continue
       self.drop_db(dbname)
 
@@ -330,6 +324,19 @@ class Tablet(object):
     conn, cursor = self.connect()
     try:
       cursor.execute("show variables like '%s'" % name)
+      return cursor.fetchone()
+    finally:
+      conn.close()
+
+  def check_db_status(self, name, value):
+    row = self.get_db_status(name)
+    if row[1] != value:
+      raise utils.TestError('status not correct', name, row)
+
+  def get_db_status(self, name):
+    conn, cursor = self.connect()
+    try:
+      cursor.execute("show status like '%s'" % name)
       return cursor.fetchone()
     finally:
       conn.close()
@@ -434,6 +441,7 @@ class Tablet(object):
     args.extend(['-health_check_interval', '2s'])
     args.extend(['-enable_replication_reporter'])
     args.extend(['-degraded_threshold', '5s'])
+    args.extend(['-watch_replication_stream'])
     if enable_semi_sync:
       args.append('-enable_semi_sync')
     if self.use_mysqlctld:
@@ -715,13 +723,15 @@ class Tablet(object):
     if Tablet.tablets_running > 0:
       raise utils.TestError('This test is not killing all its vttablets')
 
-  def execute(self, sql, bindvars=None, transaction_id=None, auto_log=True):
+  def execute(self, sql, bindvars=None, transaction_id=None,
+              execute_options=None, auto_log=True):
     """execute uses 'vtctl VtTabletExecute' to execute a command.
 
     Args:
       sql: the command to execute.
       bindvars: a dict of bind variables.
       transaction_id: the id of the transaction to use if necessary.
+      execute_options: proto-encoded ExecuteOptions object.
       auto_log: passed to run_vtctl.
 
     Returns:
@@ -734,6 +744,8 @@ class Tablet(object):
       args.extend(['-bind_variables', json.dumps(bindvars)])
     if transaction_id:
       args.extend(['-transaction_id', str(transaction_id)])
+    if execute_options:
+      args.extend(['-options', execute_options])
     args.extend([self.tablet_alias, sql])
     return utils.run_vtctl_json(args, auto_log=auto_log)
 

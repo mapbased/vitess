@@ -10,12 +10,15 @@ import (
 	"strings"
 
 	log "github.com/golang/glog"
+	"golang.org/x/net/context"
+
+	"github.com/youtube/vitess/go/sqldb"
 	"github.com/youtube/vitess/go/stats"
-	"github.com/youtube/vitess/go/sync2"
 	"github.com/youtube/vitess/go/vt/mysqlctl"
 	"github.com/youtube/vitess/go/vt/mysqlctl/replication"
 
 	binlogdatapb "github.com/youtube/vitess/go/vt/proto/binlogdata"
+	querypb "github.com/youtube/vitess/go/vt/proto/query"
 )
 
 var (
@@ -62,12 +65,15 @@ func getStatementCategory(sql string) binlogdatapb.BinlogTransaction_Statement_C
 // A Streamer should only be used once. To start another stream, call
 // NewStreamer() again.
 type Streamer struct {
-	// dbname and mysqld are set at creation.
-	dbname          string
-	mysqld          mysqlctl.MysqlDaemon
-	clientCharset   *binlogdatapb.Charset
-	startPos        replication.Position
-	sendTransaction sendTransactionFunc
+	// dbname and mysqld are set at creation and immutable.
+	dbname string
+	mysqld mysqlctl.MysqlDaemon
+
+	clientCharset    *binlogdatapb.Charset
+	startPos         replication.Position
+	timestamp        int64
+	sendTransaction  sendTransactionFunc
+	usePreviousGTIDs bool
 
 	conn *mysqlctl.SlaveConnection
 }
@@ -77,23 +83,25 @@ type Streamer struct {
 // dbname specifes the database to stream events for.
 // mysqld is the local instance of mysqlctl.Mysqld.
 // charset is the default character set on the BinlogPlayer side.
-// startPos is the position to start streaming at.
+// startPos is the position to start streaming at. Incompatible with timestamp.
+// timestamp is the timestamp to start streaming at. Incompatible with startPos.
 // sendTransaction is called each time a transaction is committed or rolled back.
-func NewStreamer(dbname string, mysqld mysqlctl.MysqlDaemon, clientCharset *binlogdatapb.Charset, startPos replication.Position, sendTransaction sendTransactionFunc) *Streamer {
+func NewStreamer(dbname string, mysqld mysqlctl.MysqlDaemon, clientCharset *binlogdatapb.Charset, startPos replication.Position, timestamp int64, sendTransaction sendTransactionFunc) *Streamer {
 	return &Streamer{
 		dbname:          dbname,
 		mysqld:          mysqld,
 		clientCharset:   clientCharset,
 		startPos:        startPos,
+		timestamp:       timestamp,
 		sendTransaction: sendTransaction,
 	}
 }
 
 // Stream starts streaming binlog events using the settings from NewStreamer().
-func (bls *Streamer) Stream(ctx *sync2.ServiceContext) (err error) {
+func (bls *Streamer) Stream(ctx context.Context) (err error) {
 	stopPos := bls.startPos
 	defer func() {
-		if err != nil {
+		if err != nil && err != mysqlctl.ErrBinlogUnavailable {
 			err = fmt.Errorf("stream error @ %v: %v", stopPos, err)
 		}
 		log.Infof("stream ended @ %v, err = %v", stopPos, err)
@@ -112,7 +120,7 @@ func (bls *Streamer) Stream(ctx *sync2.ServiceContext) (err error) {
 	// general doesn't support servers with different default charsets, so we
 	// treat it as a configuration error.
 	if bls.clientCharset != nil {
-		cs, err := bls.conn.GetCharset()
+		cs, err := sqldb.GetCharset(bls.conn)
 		if err != nil {
 			return fmt.Errorf("can't get charset to check binlog stream: %v", err)
 		}
@@ -123,7 +131,26 @@ func (bls *Streamer) Stream(ctx *sync2.ServiceContext) (err error) {
 	}
 
 	var events <-chan replication.BinlogEvent
-	events, err = bls.conn.StartBinlogDump(bls.startPos)
+	if bls.timestamp != 0 {
+		// MySQL 5.6 only: We are going to start reading the
+		// logs from the beginning of a binlog file. That is
+		// going to send us the PREVIOUS_GTIDS_EVENT that
+		// contains the starting GTIDSet, and we will save
+		// that as the current position.
+		bls.usePreviousGTIDs = true
+		events, err = bls.conn.StartBinlogDumpFromBinlogBeforeTimestamp(ctx, bls.timestamp)
+	} else if !bls.startPos.IsZero() {
+		// MySQL 5.6 only: we are starting from a random
+		// binlog position. It turns out we will receive a
+		// PREVIOUS_GTIDS_EVENT event, that has a GTIDSet
+		// extracted from the binlogs. It is not related to
+		// the starting position we pass in, it seems it is
+		// just the PREVIOUS_GTIDS_EVENT from the file we're reading.
+		// So we have to skip it.
+		events, err = bls.conn.StartBinlogDumpFromPosition(ctx, bls.startPos)
+	} else {
+		bls.startPos, events, err = bls.conn.StartBinlogDumpFromCurrent(ctx)
+	}
 	if err != nil {
 		return err
 	}
@@ -139,7 +166,8 @@ func (bls *Streamer) Stream(ctx *sync2.ServiceContext) (err error) {
 //
 // If the sendTransaction func returns io.EOF, parseEvents returns ErrClientEOF.
 // If the events channel is closed, parseEvents returns ErrServerEOF.
-func (bls *Streamer) parseEvents(ctx *sync2.ServiceContext, events <-chan replication.BinlogEvent) (replication.Position, error) {
+// If the context is done, returns ctx.Err().
+func (bls *Streamer) parseEvents(ctx context.Context, events <-chan replication.BinlogEvent) (replication.Position, error) {
 	var statements []*binlogdatapb.BinlogTransaction_Statement
 	var format replication.BinlogFormat
 	var gtid replication.GTID
@@ -160,16 +188,20 @@ func (bls *Streamer) parseEvents(ctx *sync2.ServiceContext, events <-chan replic
 	// A commit can be triggered either by a COMMIT query, or by an XID_EVENT.
 	// Statements that aren't wrapped in BEGIN/COMMIT are committed immediately.
 	commit := func(timestamp uint32) error {
-		trans := &binlogdatapb.BinlogTransaction{
-			Statements:    statements,
-			Timestamp:     int64(timestamp),
-			TransactionId: replication.EncodeGTID(gtid),
-		}
-		if err = bls.sendTransaction(trans); err != nil {
-			if err == io.EOF {
-				return ErrClientEOF
+		if int64(timestamp) >= bls.timestamp {
+			trans := &binlogdatapb.BinlogTransaction{
+				Statements: statements,
+				EventToken: &querypb.EventToken{
+					Timestamp: int64(timestamp),
+					Position:  replication.EncodePosition(pos),
+				},
 			}
-			return fmt.Errorf("send reply error: %v", err)
+			if err = bls.sendTransaction(trans); err != nil {
+				if err == io.EOF {
+					return ErrClientEOF
+				}
+				return fmt.Errorf("send reply error: %v", err)
+			}
 		}
 		statements = nil
 		autocommit = true
@@ -177,7 +209,7 @@ func (bls *Streamer) parseEvents(ctx *sync2.ServiceContext, events <-chan replic
 	}
 
 	// Parse events.
-	for ctx.IsRunning() {
+	for {
 		var ev replication.BinlogEvent
 		var ok bool
 
@@ -188,9 +220,9 @@ func (bls *Streamer) parseEvents(ctx *sync2.ServiceContext, events <-chan replic
 				log.Infof("reached end of binlog event stream")
 				return pos, ErrServerEOF
 			}
-		case <-ctx.ShuttingDown:
-			log.Infof("stopping early due to binlog Streamer service shutdown")
-			return pos, nil
+		case <-ctx.Done():
+			log.Infof("stopping early due to binlog Streamer service shutdown or client disconnect")
+			return pos, ctx.Err()
 		}
 
 		// Validate the buffer before reading fields from it.
@@ -312,8 +344,23 @@ func (bls *Streamer) parseEvents(ctx *sync2.ServiceContext, events <-chan replic
 					}
 				}
 			}
+		case ev.IsPreviousGTIDs(): // PREVIOUS_GTIDS_EVENT
+			// MySQL 5.6 only: The Binlogs contain an
+			// event that gives us all the previously
+			// applied commits. It is *not* an
+			// authoritative value, unless we started from
+			// the beginning of a binlog file.
+			if !bls.usePreviousGTIDs {
+				continue
+			}
+			newPos, err := ev.PreviousGTIDs(format)
+			if err != nil {
+				return pos, err
+			}
+			pos = newPos
+			if err = commit(ev.Timestamp()); err != nil {
+				return pos, err
+			}
 		}
 	}
-
-	return pos, nil
 }

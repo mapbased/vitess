@@ -11,7 +11,6 @@ import (
 	"github.com/youtube/vitess/go/mysql"
 	"github.com/youtube/vitess/go/sqldb"
 	vtrpcpb "github.com/youtube/vitess/go/vt/proto/vtrpc"
-	"golang.org/x/net/context"
 )
 
 func TestTabletErrorCode(t *testing.T) {
@@ -29,6 +28,27 @@ func TestTabletErrorRetriableErrorTypeOverwrite(t *testing.T) {
 	if tabletErr.ErrorCode != vtrpcpb.ErrorCode_QUERY_NOT_SERVED {
 		t.Fatalf("got: %v wanted: QUERY_NOT_SERVED", tabletErr.ErrorCode)
 	}
+
+	sqlErr = sqldb.NewSQLError(mysql.ErrDupEntry, "23000", "error")
+	tabletErr = NewTabletErrorSQL(vtrpcpb.ErrorCode_INTERNAL_ERROR, sqlErr)
+	if tabletErr.ErrorCode != vtrpcpb.ErrorCode_INTEGRITY_ERROR {
+		t.Fatalf("got: %v wanted: INTEGRITY_ERROR", tabletErr.ErrorCode)
+	}
+
+	sqlErr = sqldb.NewSQLError(mysql.ErrDataTooLong, "22001", "error")
+	tabletErr = NewTabletErrorSQL(vtrpcpb.ErrorCode_INTERNAL_ERROR, sqlErr)
+	if tabletErr.ErrorCode != vtrpcpb.ErrorCode_BAD_INPUT {
+		t.Fatalf("got: %v wanted: BAD_INPUT", tabletErr.ErrorCode)
+	}
+
+	sqlErr = sqldb.NewSQLError(mysql.ErrDataOutOfRange, "22003", "error")
+	tabletErr = NewTabletErrorSQL(vtrpcpb.ErrorCode_INTERNAL_ERROR, sqlErr)
+	if tabletErr.ErrorCode != vtrpcpb.ErrorCode_BAD_INPUT {
+		t.Fatalf("got: %v wanted: BAD_INPUT", tabletErr.ErrorCode)
+	}
+}
+
+func TestTabletErrorRetriableErrorTypeOverwrite2(t *testing.T) {
 }
 
 func TestTabletErrorMsgTooLong(t *testing.T) {
@@ -168,50 +188,6 @@ func TestTabletErrorRecordStats(t *testing.T) {
 	if failCounterAfter-failCounterBefore != 1 {
 		t.Fatalf("sql error with SQL error mysql.ErrOptionPreventsStatement should increase Fail error count by 1")
 	}
-}
-
-func TestTabletErrorHandleUncaughtError(t *testing.T) {
-	var err error
-	logStats := newLogStats("TestTabletErrorHandleError", context.Background())
-	queryServiceStats := NewQueryServiceStats("", false)
-	defer func() {
-		_, ok := err.(*TabletError)
-		if !ok {
-			t.Fatalf("error should be a TabletError, but got error: %v", err)
-		}
-	}()
-	defer handleError(&err, logStats, queryServiceStats)
-	panic("unknown error")
-}
-
-func TestTabletErrorHandleRetryError(t *testing.T) {
-	var err error
-	tabletErr := NewTabletErrorSQL(vtrpcpb.ErrorCode_QUERY_NOT_SERVED, sqldb.NewSQLError(1000, "HY000", "test"))
-	logStats := newLogStats("TestTabletErrorHandleError", context.Background())
-	queryServiceStats := NewQueryServiceStats("", false)
-	defer func() {
-		_, ok := err.(*TabletError)
-		if !ok {
-			t.Fatalf("error should be a TabletError, but got error: %v", err)
-		}
-	}()
-	defer handleError(&err, logStats, queryServiceStats)
-	panic(tabletErr)
-}
-
-func TestTabletErrorHandleTxPoolFullError(t *testing.T) {
-	var err error
-	tabletErr := NewTabletErrorSQL(vtrpcpb.ErrorCode_RESOURCE_EXHAUSTED, sqldb.NewSQLError(1000, "HY000", "test"))
-	logStats := newLogStats("TestTabletErrorHandleError", context.Background())
-	queryServiceStats := NewQueryServiceStats("", false)
-	defer func() {
-		_, ok := err.(*TabletError)
-		if !ok {
-			t.Fatalf("error should be a TabletError, but got error: %v", err)
-		}
-	}()
-	defer handleError(&err, logStats, queryServiceStats)
-	panic(tabletErr)
 }
 
 func TestTabletErrorLogUncaughtErr(t *testing.T) {

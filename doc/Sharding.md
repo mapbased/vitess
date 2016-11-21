@@ -14,6 +14,7 @@ shards, each shard contains records for approximately half of the
 application's users. Similarly, each user's information is stored
 in only one shard.
 
+Note that sharding is orthogonal to (MySQL) replication.
 A Vitess shard typically contains one MySQL master and many MySQL
 slaves. The master handles write operations, while slaves handle
 read-only traffic, batch processing operations, and other tasks.
@@ -26,12 +27,13 @@ Vitess supports the following types of sharding operations:
 
 * **Horizontal sharding:** Splitting or merging shards in a sharded keyspace
 * **Vertical sharding:** Moving tables from an unsharded keyspace to
-    a different keyspace.
+  a different keyspace.
 
 With these features, you can start with a single keyspace that contains
 all of your data (in multiple tables). As your database grows, you can
-move tables to different keyspaces and shard some or all of those keyspaces
-without any real downtime for your application.
+move tables to different keyspaces (vertical split) and shard some or
+all of those keyspaces (horizontal split) without any real downtime
+for your application.
 
 ## Range-based Sharding
 
@@ -57,36 +59,6 @@ that updates information about a particular user might be directed to
 a single shard in the application's "user" keyspace. On the other hand,
 a query that retrieves information about several products might be
 directed to one or more shards in the application's "product" keyspace.
-
-### Sharding Keys
-
-As discussed above, Vitess calculates the sharding keys associated
-with any particular query and then routes the query to the appropriate
-shards.
-
-Vitess supports two types of sharding keys:
-
-* **Binary data:** The key is an array of bytes. Vitess uses regular
-    byte-array comparison to determine which shard should handle the
-    query. The MySQL representation for this type of sharding key is
-    a <code>VARBINARY</code> field.
-
-* **64-bit unsigned integer:** Vitess converts the 64-bit integer into
-    a byte array by copying the bytes, most significant byte first,
-    into 8 bytes. Vitess then uses byte-array comparison to identify the
-    right shards to handle the query. The MySQL representation for this
-    type of sharding key is a <code>bigint(20) UNSIGNED</code> field.
-
-A sharded keyspace contains information about the type of sharding key
-that the keyspace uses. Each database table in the shard has a column
-that stores the sharding key associated with each row in the table. The
-sharding key column in each table has the same name and column type.
-
-A common example of a sharding key is the 64-bit hash of a user ID. The
-hashing function ensures that the sharding keys are evenly distributed
-in the space.
-
-**Note:** If the vtgate v3 API is used, the sharding key value is no longer materialized. Instead, vtgate can calculate it on the fly when reading and inserting data. (A valid VSchema is required to tell vtgate how to calculate the sharding key value.) 
 
 ### Key Ranges and Partitions
 

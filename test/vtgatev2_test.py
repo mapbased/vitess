@@ -83,11 +83,10 @@ CREATE_VT_SEQ = '''create table vt_seq (
   id int,
   next_id bigint,
   cache bigint,
-  increment bigint,
   primary key(id)
 ) comment 'vitess_sequence' Engine=InnoDB'''
 
-INIT_VT_SEQ = 'insert into vt_seq values(0, 1, 2, 2)'
+INIT_VT_SEQ = 'insert into vt_seq values(0, 1, 2)'
 
 
 create_tables = [
@@ -174,7 +173,7 @@ def setup_tablets():
   utils.run_vtctl(['SetKeyspaceShardingInfo', '-force', KEYSPACE_NAME,
                    'keyspace_id', 'uint64'])
   shard_0_master.init_tablet(
-      'master',
+      'replica',
       keyspace=KEYSPACE_NAME,
       shard='-80',
       tablet_index=0)
@@ -189,7 +188,7 @@ def setup_tablets():
       shard='-80',
       tablet_index=2)
   shard_1_master.init_tablet(
-      'master',
+      'replica',
       keyspace=KEYSPACE_NAME,
       shard='80-',
       tablet_index=0)
@@ -213,15 +212,13 @@ def setup_tablets():
       t.mquery(shard_0_master.dbname, create_table)
     t.start_vttablet(wait_for_state=None)
 
-  for t in [shard_0_master, shard_1_master]:
-    t.wait_for_vttablet_state('SERVING')
-  for t in [shard_0_replica1, shard_0_replica2,
-            shard_1_replica1, shard_1_replica2]:
+  for t in [shard_0_master, shard_0_replica1, shard_0_replica2,
+            shard_1_master, shard_1_replica1, shard_1_replica2]:
     t.wait_for_vttablet_state('NOT_SERVING')
 
-  utils.run_vtctl(['InitShardMaster', KEYSPACE_NAME+'/-80',
+  utils.run_vtctl(['InitShardMaster', '-force', KEYSPACE_NAME+'/-80',
                    shard_0_master.tablet_alias], auto_log=True)
-  utils.run_vtctl(['InitShardMaster', KEYSPACE_NAME+'/80-',
+  utils.run_vtctl(['InitShardMaster', '-force', KEYSPACE_NAME+'/80-',
                    shard_1_master.tablet_alias], auto_log=True)
 
   for t in [shard_0_master, shard_0_replica1, shard_0_replica2,
@@ -389,13 +386,38 @@ class TestCoreVTGateFunctions(BaseTestCase):
       for result in cursor.results:
         kid = result[2]
         self.assertIn(kid, SHARD_KID_MAP[SHARD_NAMES[shard_index]])
-    # Do a cross shard range query and assert all rows are fetched
+
+    # Do a cross shard range query and assert all rows are fetched.
+    # Use this test to also test the vtgate vars (and l2vtgate vars if
+    # applicable) are correctly updated.
+    v = utils.vtgate.get_vars()
+    key0 = 'Execute.' + KEYSPACE_NAME + '.' + SHARD_NAMES[0] + '.master'
+    key1 = 'Execute.' + KEYSPACE_NAME + '.' + SHARD_NAMES[1] + '.master'
+    before0 = v['VttabletCall']['Histograms'][key0]['Count']
+    before1 = v['VttabletCall']['Histograms'][key1]['Count']
+    if use_l2vtgate:
+      lv = l2vtgate.get_vars()
+      lbefore0 = lv['VttabletCall']['Histograms'][key0]['Count']
+      lbefore1 = lv['VttabletCall']['Histograms'][key1]['Count']
+
     cursor = vtgate_conn.cursor(
         tablet_type='master', keyspace=KEYSPACE_NAME,
         keyranges=[keyrange.KeyRange('75-95')])
     rowcount = cursor.execute('select * from vt_insert_test', {})
     self.assertEqual(rowcount, row_counts[0] + row_counts[1])
     vtgate_conn.close()
+
+    v = utils.vtgate.get_vars()
+    after0 = v['VttabletCall']['Histograms'][key0]['Count']
+    after1 = v['VttabletCall']['Histograms'][key1]['Count']
+    self.assertEqual(after0 - before0, 1)
+    self.assertEqual(after1 - before1, 1)
+    if use_l2vtgate:
+      lv = l2vtgate.get_vars()
+      lafter0 = lv['VttabletCall']['Histograms'][key0]['Count']
+      lafter1 = lv['VttabletCall']['Histograms'][key1]['Count']
+      self.assertEqual(lafter0 - lbefore0, 1)
+      self.assertEqual(lafter1 - lbefore1, 1)
 
   def test_rollback(self):
     vtgate_conn = get_connection()
@@ -761,7 +783,7 @@ class TestCoreVTGateFunctions(BaseTestCase):
       want = 1
       for _ in xrange(10):
         result, _, _, _ = vtgate_conn._execute(
-            'select next value for vt_seq', {},
+            'select next :n values for vt_seq', {'n': 2},
             tablet_type=tablet_type, keyspace_name=KEYSPACE_NAME,
             keyspace_ids=[pack_kid(0)])
         self.assertEqual(result[0][0], want)
@@ -866,6 +888,15 @@ class TestCoreVTGateFunctions(BaseTestCase):
           keyspace_ids=keyspace_ids)
       self.assertEqual(result, [tuple(bind_vars.values())])
 
+  def test_vschema_vars(self):
+    v = utils.vtgate.get_vars()
+    self.assertIn('VtgateVSchemaCounts', v)
+    self.assertIn('Reload', v['VtgateVSchemaCounts'])
+    self.assertTrue(v['VtgateVSchemaCounts']['Reload'] > 0)
+    self.assertIn('WatchError', v['VtgateVSchemaCounts'])
+    self.assertTrue(v['VtgateVSchemaCounts']['WatchError'] > 0)
+    self.assertNotIn('Parsing', v['VtgateVSchemaCounts'])
+
 
 class TestFailures(BaseTestCase):
 
@@ -937,7 +968,7 @@ class TestFailures(BaseTestCase):
     vtgate_conn = get_connection()
     port = utils.vtgate.port
     utils.vtgate.kill()
-    with self.assertRaises(dbexceptions.OperationalError):
+    with self.assertRaises(dbexceptions.DatabaseError):
       vtgate_conn._execute(
           'select 1 from vt_insert_test', {},
           tablet_type='replica', keyspace_name=KEYSPACE_NAME,
@@ -986,7 +1017,7 @@ class TestFailures(BaseTestCase):
         cursorclass=vtgate_cursor.StreamVTGateCursor)
     port = utils.vtgate.port
     utils.vtgate.kill()
-    with self.assertRaises(dbexceptions.OperationalError):
+    with self.assertRaises(dbexceptions.DatabaseError):
       stream_cursor.execute('select * from vt_insert_test', {})
     vtgate_conn.close()
 
@@ -1029,7 +1060,7 @@ class TestFailures(BaseTestCase):
     vtgate_conn = get_connection()
     port = utils.vtgate.port
     utils.vtgate.kill()
-    with self.assertRaises(dbexceptions.OperationalError):
+    with self.assertRaises(dbexceptions.DatabaseError):
       vtgate_conn.begin()
     restart_vtgate(port)
     vtgate_conn = get_connection()
@@ -1127,7 +1158,7 @@ class TestFailures(BaseTestCase):
     # once for the _execute, once for the close's rollback).
     vtgate_conn = get_connection(timeout=5.0)
     port = utils.vtgate.port
-    with self.assertRaises(dbexceptions.OperationalError):
+    with self.assertRaises(dbexceptions.DatabaseError):
       vtgate_conn.begin()
       utils.vtgate.kill()
       vtgate_conn._execute(

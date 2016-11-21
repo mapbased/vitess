@@ -116,7 +116,7 @@ func TestUpdateEqualFail(t *testing.T) {
 	_, err = routerExec(router, "update user set a=2 where id = :id", map[string]interface{}{
 		"id": "aa",
 	})
-	want = `execUpdateEqual: hash.Map: getNumber: strconv.ParseUint: parsing "aa": invalid syntax`
+	want = `execUpdateEqual: hash.Map: parseString: strconv.ParseUint: parsing "aa": invalid syntax`
 	if err == nil || err.Error() != want {
 		t.Errorf("routerExec: %v, want %v", err, want)
 	}
@@ -275,7 +275,7 @@ func TestDeleteEqualFail(t *testing.T) {
 	_, err = routerExec(router, "delete from user where id = :id", map[string]interface{}{
 		"id": "aa",
 	})
-	want = `execDeleteEqual: hash.Map: getNumber: strconv.ParseUint: parsing "aa": invalid syntax`
+	want = `execDeleteEqual: hash.Map: parseString: strconv.ParseUint: parsing "aa": invalid syntax`
 	if err == nil || err.Error() != want {
 		t.Errorf("routerExec: %v, want %v", err, want)
 	}
@@ -414,7 +414,7 @@ func TestInsertGenerator(t *testing.T) {
 		t.Errorf("sbc.Queries: %+v, want %+v\n", sbc.Queries, wantQueries)
 	}
 	wantQueries = []querytypes.BoundQuery{{
-		Sql:           "select next value from `user_seq`",
+		Sql:           "select next 1 values from `user_seq`",
 		BindVariables: map[string]interface{}{},
 	}, {
 		Sql: "insert into name_user_map(name, user_id) values (:name, :user_id)",
@@ -489,7 +489,7 @@ func TestInsertLookupOwnedGenerator(t *testing.T) {
 		t.Errorf("sbc.Queries:\n%+v, want\n%+v\n", sbc.Queries, wantQueries)
 	}
 	wantQueries = []querytypes.BoundQuery{{
-		Sql:           "select next value from `user_seq`",
+		Sql:           "select next 1 values from `user_seq`",
 		BindVariables: map[string]interface{}{},
 	}, {
 		Sql: "insert into music_user_map(music_id, user_id) values (:music_id, :user_id)",
@@ -632,7 +632,7 @@ func TestInsertFail(t *testing.T) {
 
 	sbclookup.MustFailServer = 1
 	_, err = routerExec(router, "insert into music(user_id, id) values (1, 2)", nil)
-	want = "execInsertSharded: lookup.Create: shard, host: TestUnsharded.0.master"
+	want = "execInsertSharded: lookup.Create: target: TestUnsharded.0.master"
 	if err == nil || !strings.HasPrefix(err.Error(), want) {
 		t.Errorf("routerExec: %v, want prefix %v", err, want)
 	}
@@ -644,7 +644,7 @@ func TestInsertFail(t *testing.T) {
 	}
 
 	_, err = routerExec(router, "insert into music_extra_reversed(music_id, user_id) values (1, 'aa')", nil)
-	want = `execInsertSharded: hash.Verify: getNumber: strconv.ParseUint: parsing "aa": invalid syntax`
+	want = `execInsertSharded: hash.Verify: parseString: strconv.ParseUint: parsing "aa": invalid syntax`
 	if err == nil || err.Error() != want {
 		t.Errorf("routerExec: %v, want %v", err, want)
 	}
@@ -657,7 +657,7 @@ func TestInsertFail(t *testing.T) {
 
 	sbc.MustFailServer = 1
 	_, err = routerExec(router, "insert into user(id, v, name) values (1, 2, 'myname')", nil)
-	want = "execInsertSharded: shard, host: TestRouter.-20.master"
+	want = "execInsertSharded: target: TestRouter.-20.master"
 	if err == nil || !strings.HasPrefix(err.Error(), want) {
 		t.Errorf("routerExec: %v, want prefix %v", err, want)
 	}
@@ -800,7 +800,7 @@ func TestMultiInsertGenerator(t *testing.T) {
 		t.Errorf("sbc.Queries: %+v, want %+v\n", sbc.Queries, wantQueries)
 	}
 	wantQueries = []querytypes.BoundQuery{{
-		Sql:           "select next value from `user_seq`",
+		Sql:           "select next 1 values from `user_seq`",
 		BindVariables: map[string]interface{}{},
 	}, {
 		Sql: "insert into name_user_map(name, user_id) values (:name, :user_id)",
@@ -809,7 +809,7 @@ func TestMultiInsertGenerator(t *testing.T) {
 			"user_id": int64(1),
 		},
 	}, {
-		Sql:           "select next value from `user_seq`",
+		Sql:           "select next 1 values from `user_seq`",
 		BindVariables: map[string]interface{}{},
 	}, {
 		Sql: "insert into name_user_map(name, user_id) values (:name, :user_id)",

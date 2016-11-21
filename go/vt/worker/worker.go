@@ -30,8 +30,8 @@ type Worker interface {
 	StatusAsText() string
 
 	// Run is the main entry point for the worker. It will be
-	// called in a go routine.  When the passed in context is
-	// cancelled, Run should exit as soon as possible.
+	// called in a go routine.  When the passed in context is canceled, Run()
+	// should exit as soon as possible.
 	Run(context.Context) error
 }
 
@@ -83,6 +83,16 @@ var (
 	// statsStreamingQueryErrorsCounters tracks for every tablet alias how often
 	// a (previously successfully established) streaming query did error.
 	statsStreamingQueryErrorsCounters = stats.NewCounters("StreamingQueryErrorsCounters")
+	// statsStreamingQueryRestartsSameTabletCounters tracks for every tablet alias
+	// how often we successfully restarted a streaming query on the first retry.
+	// This kind of restart is usually necessary when our streaming query is idle
+	// and MySQL aborts it after a timeout.
+	statsStreamingQueryRestartsSameTabletCounters = stats.NewCounters("StreamingQueryRestartsSameTabletCounters")
+	// statsStreamingQueryRestartsDifferentTablet records how many restarts were
+	// successful on the 2 (or higher) retry after the initial retry to the same
+	// tablet failed and we switched to a different tablet. In practice, this
+	// happens when a tablet did go away due to a maintenance operation.
+	statsStreamingQueryRestartsDifferentTablet = stats.NewInt("StreamingQueryRestartsDifferentTablet")
 )
 
 const (

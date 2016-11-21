@@ -64,14 +64,19 @@ func (agent *ActionAgent) InitTablet(port, gRPCPort int32) error {
 		return fmt.Errorf("cannot validate shard name %v: %v", *initShard, err)
 	}
 
-	// create a context for this whole operation
+	// Create a context for this whole operation.  Note we will
+	// retry some actions upon failure up to this context expires.
 	ctx, cancel := context.WithTimeout(agent.batchCtx, *initTimeout)
 	defer cancel()
 
-	// read the shard, create it if necessary
-	log.Infof("Reading shard record %v/%v", *initKeyspace, shard)
-	si, err := agent.TopoServer.GetOrCreateShard(ctx, *initKeyspace, shard)
-	if err != nil {
+	// Read the shard, create it if necessary.
+	log.Infof("Reading/creating keyspace and shard records for %v/%v", *initKeyspace, shard)
+	var si *topo.ShardInfo
+	if err := agent.withRetry(ctx, "creating keyspace and shard", func() error {
+		var err error
+		si, err = agent.TopoServer.GetOrCreateShard(ctx, *initKeyspace, shard)
+		return err
+	}); err != nil {
 		return fmt.Errorf("InitTablet cannot GetOrCreateShard shard: %v", err)
 	}
 	if si.MasterAlias != nil && topoproto.TabletAliasEqual(si.MasterAlias, agent.TabletAlias) {
@@ -98,15 +103,17 @@ func (agent *ActionAgent) InitTablet(port, gRPCPort int32) error {
 
 	// See if we need to add the tablet's cell to the shard's cell list.
 	if !si.HasCell(agent.TabletAlias.Cell) {
-		si, err = agent.TopoServer.UpdateShardFields(ctx, *initKeyspace, shard, func(si *topo.ShardInfo) error {
-			if si.HasCell(agent.TabletAlias.Cell) {
-				// Someone else already did it.
-				return topo.ErrNoUpdateNeeded
-			}
-			si.Cells = append(si.Cells, agent.TabletAlias.Cell)
-			return nil
-		})
-		if err != nil {
+		if err := agent.withRetry(ctx, "updating Cells list in Shard if necessary", func() error {
+			si, err = agent.TopoServer.UpdateShardFields(ctx, *initKeyspace, shard, func(si *topo.ShardInfo) error {
+				if si.HasCell(agent.TabletAlias.Cell) {
+					// Someone else already did it.
+					return topo.ErrNoUpdateNeeded
+				}
+				si.Cells = append(si.Cells, agent.TabletAlias.Cell)
+				return nil
+			})
+			return err
+		}); err != nil {
 			return fmt.Errorf("couldn't add tablet's cell to shard record: %v", err)
 		}
 	}
@@ -145,17 +152,15 @@ func (agent *ActionAgent) InitTablet(port, gRPCPort int32) error {
 		return fmt.Errorf("InitTablet TabletComplete failed: %v", err)
 	}
 
-	// now try to create the record
+	// Now try to create the record (it will also fix up the
+	// ShardReplication record if necessary).
 	err = agent.TopoServer.CreateTablet(ctx, tablet)
 	switch err {
 	case nil:
-		// it worked, we're good, can update the replication graph
-		if err := topo.UpdateTabletReplicationData(ctx, agent.TopoServer, tablet); err != nil {
-			return fmt.Errorf("UpdateTabletReplicationData failed: %v", err)
-		}
-
+		// It worked, we're good.
 	case topo.ErrNodeExists:
-		// The node already exists, will just try to update it. So we read it first.
+		// The node already exists, will just try to update
+		// it. So we read it first.
 		oldTablet, err := agent.TopoServer.GetTablet(ctx, tablet.Alias)
 		if err != nil {
 			return fmt.Errorf("InitTablet failed to read existing tablet record: %v", err)
@@ -170,10 +175,6 @@ func (agent *ActionAgent) InitTablet(port, gRPCPort int32) error {
 		if err := agent.TopoServer.UpdateTablet(ctx, topo.NewTabletInfo(tablet, -1)); err != nil {
 			return fmt.Errorf("UpdateTablet failed: %v", err)
 		}
-
-		// Note we don't need to UpdateTabletReplicationData
-		// as the tablet already existed with the right data
-		// in the replication graph
 	default:
 		return fmt.Errorf("CreateTablet failed: %v", err)
 	}

@@ -34,6 +34,7 @@ public class VitessResultSet implements ResultSet {
     private Row row;
     private int currentRow;
     private int maxRows;
+    private int fetchSize;
     /**
      * Last column name index read
      */
@@ -58,6 +59,7 @@ public class VitessResultSet implements ResultSet {
         this.currentRow = 0;
         if (null != vitessStatement) {
             this.maxRows = vitessStatement.getMaxRows();
+            this.fetchSize = vitessStatement.getFetchSize();
         }
     }
 
@@ -204,6 +206,13 @@ public class VitessResultSet implements ResultSet {
 
         if (isNull(columnIndex)) {
             return false;
+        }
+
+        // Mysql 5.0 and higher have a BIT Data Type, need to check for this as well.
+        Query.Field field = this.fields.get(columnIndex - 1);
+
+        if (field.getType() == Query.Type.BIT) {
+            return byteArrayToBoolean(columnIndex);
         }
 
         boolString = this.getString(columnIndex);
@@ -575,12 +584,15 @@ public class VitessResultSet implements ResultSet {
 
     public int getFetchSize() throws SQLException {
         checkOpen();
-        return 0;
+        return this.fetchSize;
     }
 
     public void setFetchSize(int rows) throws SQLException {
-        throw new SQLFeatureNotSupportedException(
-            Constants.SQLExceptionMessages.SQL_FEATURE_NOT_SUPPORTED);
+        checkOpen();
+        if (rows < 0) {
+            throw new SQLException(Constants.SQLExceptionMessages.ILLEGAL_VALUE_FOR + "fetch size");
+        }
+        this.fetchSize = rows;
     }
 
     public int getType() throws SQLException {
@@ -1367,6 +1379,28 @@ public class VitessResultSet implements ResultSet {
     public <T> T getObject(String columnLabel, Class<T> type) throws SQLException {
         throw new SQLFeatureNotSupportedException(
             Constants.SQLExceptionMessages.SQL_FEATURE_NOT_SUPPORTED);
+    }
+
+    private boolean byteArrayToBoolean(int columnIndex) throws SQLException {
+        Object value = this.row.getObject(columnIndex);
+
+        if (value == null) {
+            return false;
+        }
+
+        if (((byte[]) value).length == 0) {
+            return false;
+        }
+
+        byte boolVal = ((byte[]) value)[0];
+
+        if (boolVal == (byte) '1') {
+            return true;
+        } else if (boolVal == (byte) '0') {
+            return false;
+        }
+
+        return (boolVal == -1 || boolVal > 0);
     }
 
 }

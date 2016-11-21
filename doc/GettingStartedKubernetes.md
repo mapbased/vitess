@@ -9,13 +9,13 @@ The `kubectl` steps will apply to any Kubernetes cluster.
 
 ## Prerequisites
 
-To complete the exercise in this guide, you must locally install Go 1.5+,
+To complete the exercise in this guide, you must locally install Go 1.7+,
 Vitess' `vtctlclient` tool, and Google Cloud SDK. The
 following sections explain how to set these up in your environment.
 
-### Install Go 1.5+
+### Install Go 1.7+
 
-You need to install [Go 1.5+](http://golang.org/doc/install) to build the
+You need to install [Go 1.7+](http://golang.org/doc/install) to build the
 `vtctlclient` tool, which issues commands to Vitess.
 
 After installing Go, make sure your `GOPATH` environment
@@ -218,7 +218,7 @@ $ export KUBECTL=/example/path/to/google-cloud-sdk/bin/kubectl
     ```
 
     This command creates two clusters. One is for the
-    [global cell](http://vitess.io/doc/TopologyService/#global-vs-local),
+    [global cell](/user-guide/topology-service.html#global-vs-local),
     and the other is for a
     [local cell](http://vitess.io/overview/concepts.html#cell-data-center)
     called *test*. You can check the status of the

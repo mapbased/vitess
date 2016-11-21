@@ -153,12 +153,6 @@ func (flavor *mysql56) SendBinlogDumpCommand(conn *SlaveConnection, startPos rep
 		return fmt.Errorf("startPos.GTIDSet is wrong type - expected Mysql56GTIDSet, got: %#v", startPos.GTIDSet)
 	}
 
-	// Tell the server that we understand the format of events that will be used
-	// if binlog_checksum is enabled on the server.
-	if _, err := conn.ExecuteFetch("SET @master_binlog_checksum=@@global.binlog_checksum", 0, false); err != nil {
-		return fmt.Errorf("failed to set @master_binlog_checksum=@@global.binlog_checksum: %v", err)
-	}
-
 	// Build the command.
 	buf := makeBinlogDumpGTIDCommand(0, conn.slaveID, gtidSet)
 	return conn.SendCommand(ComBinlogDumpGTID, buf)
@@ -215,6 +209,18 @@ func (ev mysql56BinlogEvent) GTID(f replication.BinlogFormat) (replication.GTID,
 	copy(sid[:], data[1:1+16])
 	gno := int64(binary.LittleEndian.Uint64(data[1+16 : 1+16+8]))
 	return replication.Mysql56GTID{Server: sid, Sequence: gno}, nil
+}
+
+// PreviousGTIDs implements BinlogEvent.PreviousGTIDs().
+func (ev mysql56BinlogEvent) PreviousGTIDs(f replication.BinlogFormat) (replication.Position, error) {
+	data := ev.Bytes()[f.HeaderLength:]
+	set, err := replication.NewMysql56GTIDSetFromSIDBlock(data)
+	if err != nil {
+		return replication.Position{}, err
+	}
+	return replication.Position{
+		GTIDSet: set,
+	}, nil
 }
 
 // StripChecksum implements BinlogEvent.StripChecksum().

@@ -16,7 +16,6 @@ import (
 	"github.com/youtube/vitess/go/vt/discovery"
 	"github.com/youtube/vitess/go/vt/tabletserver/querytypes"
 	"github.com/youtube/vitess/go/vt/tabletserver/sandboxconn"
-	"github.com/youtube/vitess/go/vt/topo"
 	_ "github.com/youtube/vitess/go/vt/vtgate/vindexes"
 
 	querypb "github.com/youtube/vitess/go/vt/proto/query"
@@ -480,6 +479,7 @@ func TestSelectIN(t *testing.T) {
 	}
 
 	sbc1.Queries = nil
+	sbc2.Queries = nil
 	_, err = routerExec(router, "select id from user where id in (1, 3)", nil)
 	if err != nil {
 		t.Error(err)
@@ -497,6 +497,35 @@ func TestSelectIN(t *testing.T) {
 		Sql: "select id from user where id in ::__vals",
 		BindVariables: map[string]interface{}{
 			"__vals": []interface{}{int64(3)},
+		},
+	}}
+	if !reflect.DeepEqual(sbc2.Queries, wantQueries) {
+		t.Errorf("sbc2.Queries: %+v, want %+v\n", sbc2.Queries, wantQueries)
+	}
+
+	sbc1.Queries = nil
+	sbc2.Queries = nil
+	_, err = routerExec(router, "select id from user where id in ::vals", map[string]interface{}{
+		"vals": []interface{}{int64(1), int64(3)},
+	})
+	if err != nil {
+		t.Error(err)
+	}
+	wantQueries = []querytypes.BoundQuery{{
+		Sql: "select id from user where id in ::__vals",
+		BindVariables: map[string]interface{}{
+			"__vals": []interface{}{int64(1)},
+			"vals":   []interface{}{int64(1), int64(3)},
+		},
+	}}
+	if !reflect.DeepEqual(sbc1.Queries, wantQueries) {
+		t.Errorf("sbc1.Queries: %+v, want %+v\n", sbc1.Queries, wantQueries)
+	}
+	wantQueries = []querytypes.BoundQuery{{
+		Sql: "select id from user where id in ::__vals",
+		BindVariables: map[string]interface{}{
+			"__vals": []interface{}{int64(3)},
+			"vals":   []interface{}{int64(1), int64(3)},
 		},
 	}}
 	if !reflect.DeepEqual(sbc2.Queries, wantQueries) {
@@ -587,6 +616,20 @@ func TestSelectINFail(t *testing.T) {
 		t.Errorf("routerExec: %v, want %v", err, want)
 	}
 
+	_, err = routerExec(router, "select id from user where id in ::aa", nil)
+	want = "paramsSelectIN: could not find bind var ::aa"
+	if err == nil || err.Error() != want {
+		t.Errorf("routerExec: %v, want %v", err, want)
+	}
+
+	_, err = routerExec(router, "select id from user where id in ::aa", map[string]interface{}{
+		"aa": 1,
+	})
+	want = "paramsSelectIN: expecting list for bind var ::aa: 1"
+	if err == nil || err.Error() != want {
+		t.Errorf("routerExec: %v, want %v", err, want)
+	}
+
 	getSandbox("TestRouter").SrvKeyspaceMustFail = 1
 	_, err = routerExec(router, "select id from user where id in (1)", nil)
 	want = "paramsSelectEqual: keyspace TestRouter fetch error: topo error GetSrvKeyspace"
@@ -603,7 +646,7 @@ func TestSelectScatter(t *testing.T) {
 	s.VSchema = routerVSchema
 	getSandbox(KsTestUnsharded).VSchema = unshardedVSchema
 	serv := new(sandboxTopo)
-	scatterConn := NewScatterConn(hc, topo.Server{}, serv, "", cell, 10, nil)
+	scatterConn := newTestScatterConn(hc, serv, cell)
 	shards := []string{"-20", "20-40", "40-60", "60-80", "80-a0", "a0-c0", "c0-e0", "e0-"}
 	var conns []*sandboxconn.SandboxConn
 	for _, shard := range shards {
@@ -635,7 +678,7 @@ func TestStreamSelectScatter(t *testing.T) {
 	s.VSchema = routerVSchema
 	getSandbox(KsTestUnsharded).VSchema = unshardedVSchema
 	serv := new(sandboxTopo)
-	scatterConn := NewScatterConn(hc, topo.Server{}, serv, "", cell, 10, nil)
+	scatterConn := newTestScatterConn(hc, serv, cell)
 	shards := []string{"-20", "20-40", "40-60", "60-80", "80-a0", "a0-c0", "c0-e0", "e0-"}
 	var conns []*sandboxconn.SandboxConn
 	for _, shard := range shards {
@@ -683,7 +726,7 @@ func TestSelectScatterFail(t *testing.T) {
 		conns = append(conns, sbc)
 	}
 	serv := new(sandboxTopo)
-	scatterConn := NewScatterConn(hc, topo.Server{}, serv, "", cell, 10, nil)
+	scatterConn := newTestScatterConn(hc, serv, cell)
 	router := NewRouter(context.Background(), serv, cell, "", scatterConn)
 
 	_, err := routerExec(router, "select id from user", nil)

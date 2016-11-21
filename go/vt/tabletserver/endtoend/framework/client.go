@@ -9,11 +9,12 @@ import (
 
 	"github.com/youtube/vitess/go/sqltypes"
 	"github.com/youtube/vitess/go/vt/callerid"
-	querypb "github.com/youtube/vitess/go/vt/proto/query"
 	"github.com/youtube/vitess/go/vt/tabletserver"
 	"github.com/youtube/vitess/go/vt/tabletserver/querytypes"
 	"golang.org/x/net/context"
 
+	querypb "github.com/youtube/vitess/go/vt/proto/query"
+	topodatapb "github.com/youtube/vitess/go/vt/proto/topodata"
 	vtrpcpb "github.com/youtube/vitess/go/vt/proto/vtrpc"
 )
 
@@ -65,6 +66,55 @@ func (client *QueryClient) Rollback() error {
 	return client.server.Rollback(client.ctx, &client.target, client.transactionID)
 }
 
+// Prepare executes a prepare on the current transaction.
+func (client *QueryClient) Prepare(dtid string) error {
+	defer func() { client.transactionID = 0 }()
+	return client.server.Prepare(client.ctx, &client.target, client.transactionID, dtid)
+}
+
+// CommitPrepared commits a prepared transaction.
+func (client *QueryClient) CommitPrepared(dtid string) error {
+	return client.server.CommitPrepared(client.ctx, &client.target, dtid)
+}
+
+// RollbackPrepared rollsback a prepared transaction.
+func (client *QueryClient) RollbackPrepared(dtid string, originalID int64) error {
+	return client.server.RollbackPrepared(client.ctx, &client.target, dtid, originalID)
+}
+
+// CreateTransaction issues a CreateTransaction to TabletServer.
+func (client *QueryClient) CreateTransaction(dtid string, participants []*querypb.Target) error {
+	return client.server.CreateTransaction(client.ctx, &client.target, dtid, participants)
+}
+
+// StartCommit issues a StartCommit to TabletServer for the current transaction.
+func (client *QueryClient) StartCommit(dtid string) error {
+	defer func() { client.transactionID = 0 }()
+	return client.server.StartCommit(client.ctx, &client.target, client.transactionID, dtid)
+}
+
+// SetRollback issues a SetRollback to TabletServer.
+func (client *QueryClient) SetRollback(dtid string, transactionID int64) error {
+	return client.server.SetRollback(client.ctx, &client.target, dtid, client.transactionID)
+}
+
+// ConcludeTransaction issues a ConcludeTransaction to TabletServer.
+func (client *QueryClient) ConcludeTransaction(dtid string) error {
+	return client.server.ConcludeTransaction(client.ctx, &client.target, dtid)
+}
+
+// ReadTransaction returns the transaction metadata.
+func (client *QueryClient) ReadTransaction(dtid string) (*querypb.TransactionMetadata, error) {
+	return client.server.ReadTransaction(client.ctx, &client.target, dtid)
+}
+
+// SetServingType is for testing transitions.
+// It currently supports only master->replica and back.
+func (client *QueryClient) SetServingType(tabletType topodatapb.TabletType) error {
+	_, err := client.server.SetServingType(tabletType, true, nil)
+	return err
+}
+
 // Execute executes a query.
 func (client *QueryClient) Execute(query string, bindvars map[string]interface{}) (*sqltypes.Result, error) {
 	return client.server.Execute(
@@ -73,10 +123,11 @@ func (client *QueryClient) Execute(query string, bindvars map[string]interface{}
 		query,
 		bindvars,
 		client.transactionID,
+		nil,
 	)
 }
 
-// StreamExecute executes a query & streams the results.
+// StreamExecute executes a query & returns the results.
 func (client *QueryClient) StreamExecute(query string, bindvars map[string]interface{}) (*sqltypes.Result, error) {
 	result := &sqltypes.Result{}
 	err := client.server.StreamExecute(
@@ -84,6 +135,7 @@ func (client *QueryClient) StreamExecute(query string, bindvars map[string]inter
 		&client.target,
 		query,
 		bindvars,
+		nil,
 		func(res *sqltypes.Result) error {
 			if result.Fields == nil {
 				result.Fields = res.Fields
@@ -99,13 +151,14 @@ func (client *QueryClient) StreamExecute(query string, bindvars map[string]inter
 	return result, nil
 }
 
-// Stream streams the resutls of a query.
+// Stream streams the results of a query.
 func (client *QueryClient) Stream(query string, bindvars map[string]interface{}, sendFunc func(*sqltypes.Result) error) error {
 	return client.server.StreamExecute(
 		client.ctx,
 		&client.target,
 		query,
 		bindvars,
+		nil,
 		sendFunc,
 	)
 }
@@ -118,5 +171,6 @@ func (client *QueryClient) ExecuteBatch(queries []querytypes.BoundQuery, asTrans
 		queries,
 		asTransaction,
 		client.transactionID,
+		nil,
 	)
 }

@@ -90,7 +90,7 @@ func (tc *splitCloneTestCase) setUpWithConcurreny(v3 bool, concurrency, writeQue
 	db := fakesqldb.Register()
 	tc.ts = zktestserver.New(tc.t, []string{"cell1", "cell2"})
 	ctx := context.Background()
-	tc.wi = NewInstance(ctx, tc.ts, "cell1", time.Second)
+	tc.wi = NewInstance(tc.ts, "cell1", time.Second)
 
 	if v3 {
 		if err := tc.ts.CreateKeyspace(ctx, "ks", &topodatapb.Keyspace{}); err != nil {
@@ -322,7 +322,7 @@ func newTestQueryService(t *testing.T, target querypb.Target, shqs *fakes.Stream
 	}
 }
 
-func (sq *testQueryService) StreamExecute(ctx context.Context, target *querypb.Target, sql string, bindVariables map[string]interface{}, sendReply func(reply *sqltypes.Result) error) error {
+func (sq *testQueryService) StreamExecute(ctx context.Context, target *querypb.Target, sql string, bindVariables map[string]interface{}, options *querypb.ExecuteOptions, sendReply func(reply *sqltypes.Result) error) error {
 	// Custom parsing of the query we expect.
 	// Example: SELECT `id`, `msg`, `keyspace_id` FROM table1 WHERE id>=180 AND id<190 ORDER BY id
 	min := math.MinInt32

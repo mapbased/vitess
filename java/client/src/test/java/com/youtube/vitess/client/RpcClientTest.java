@@ -1,5 +1,6 @@
 package com.youtube.vitess.client;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.ByteString;
 import com.youtube.vitess.client.cursor.Cursor;
@@ -65,7 +66,7 @@ public abstract class RpcClientTest {
           .put("aborted", SQLRecoverableException.class)
           .put("unknown error", SQLNonTransientException.class).build();
 
-  private static final String QUERY = "test query";
+  private static final String QUERY = "test query with unicode: \u6211\u80fd\u541e\u4e0b\u73bb\u7483\u800c\u4e0d\u50b7\u8eab\u9ad4";
   private static final String KEYSPACE = "test_keyspace";
 
   private static final List<String> SHARDS = Arrays.asList("-80", "80-");
@@ -337,11 +338,22 @@ public abstract class RpcClientTest {
   @Test
   public void testEchoSplitQuery() throws Exception {
     SplitQueryResponse.Part expected = SplitQueryResponse.Part.newBuilder()
-        .setQuery(Proto.bindQuery(ECHO_PREFIX + QUERY + ":split_column:123", BIND_VARS))
+        .setQuery(Proto.bindQuery(
+            ECHO_PREFIX + QUERY + ":[split_column1 split_column2]:123:1000:FULL_SCAN",
+            BIND_VARS))
         .setKeyRangePart(SplitQueryResponse.KeyRangePart.newBuilder().setKeyspace(KEYSPACE).build())
         .build();
     SplitQueryResponse.Part actual =
-        conn.splitQuery(ctx, KEYSPACE, ECHO_PREFIX + QUERY, BIND_VARS, "split_column", 123).get(0);
+        conn.splitQuery(
+            ctx,
+            KEYSPACE,
+            ECHO_PREFIX + QUERY,
+            BIND_VARS,
+            ImmutableList.of("split_column1", "split_column2"),
+            123,
+            1000,
+            com.youtube.vitess.proto.Query.SplitQueryRequest.Algorithm.FULL_SCAN)
+        .get(0);
     Assert.assertEquals(expected, actual);
   }
 

@@ -22,7 +22,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   name='query.proto',
   package='query',
   syntax='proto3',
-  serialized_pb=_b('\n\x0bquery.proto\x12\x05query\x1a\x0etopodata.proto\x1a\x0bvtrpc.proto\"T\n\x06Target\x12\x10\n\x08keyspace\x18\x01 \x01(\t\x12\r\n\x05shard\x18\x02 \x01(\t\x12)\n\x0btablet_type\x18\x03 \x01(\x0e\x32\x14.topodata.TabletType\"\"\n\x0eVTGateCallerID\x12\x10\n\x08username\x18\x01 \x01(\t\"1\n\x05Value\x12\x19\n\x04type\x18\x01 \x01(\x0e\x32\x0b.query.Type\x12\r\n\x05value\x18\x02 \x01(\x0c\"V\n\x0c\x42indVariable\x12\x19\n\x04type\x18\x01 \x01(\x0e\x32\x0b.query.Type\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x1c\n\x06values\x18\x03 \x03(\x0b\x32\x0c.query.Value\"\xa2\x01\n\nBoundQuery\x12\x0b\n\x03sql\x18\x01 \x01(\t\x12<\n\x0e\x62ind_variables\x18\x02 \x03(\x0b\x32$.query.BoundQuery.BindVariablesEntry\x1aI\n\x12\x42indVariablesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\"\n\x05value\x18\x02 \x01(\x0b\x32\x13.query.BindVariable:\x02\x38\x01\"0\n\x05\x46ield\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x19\n\x04type\x18\x02 \x01(\x0e\x32\x0b.query.Type\"&\n\x03Row\x12\x0f\n\x07lengths\x18\x01 \x03(\x12\x12\x0e\n\x06values\x18\x02 \x01(\x0c\"o\n\x0bQueryResult\x12\x1c\n\x06\x66ields\x18\x01 \x03(\x0b\x32\x0c.query.Field\x12\x15\n\rrows_affected\x18\x02 \x01(\x04\x12\x11\n\tinsert_id\x18\x03 \x01(\x04\x12\x18\n\x04rows\x18\x04 \x03(\x0b\x32\n.query.Row\"\xcb\x01\n\x0e\x45xecuteRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12 \n\x05query\x18\x04 \x01(\x0b\x32\x11.query.BoundQuery\x12\x16\n\x0etransaction_id\x18\x05 \x01(\x03\"5\n\x0f\x45xecuteResponse\x12\"\n\x06result\x18\x01 \x01(\x0b\x32\x12.query.QueryResult\"\xea\x01\n\x13\x45xecuteBatchRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\"\n\x07queries\x18\x04 \x03(\x0b\x32\x11.query.BoundQuery\x12\x16\n\x0e\x61s_transaction\x18\x05 \x01(\x08\x12\x16\n\x0etransaction_id\x18\x06 \x01(\x03\";\n\x14\x45xecuteBatchResponse\x12#\n\x07results\x18\x01 \x03(\x0b\x32\x12.query.QueryResult\"\xb9\x01\n\x14StreamExecuteRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12 \n\x05query\x18\x04 \x01(\x0b\x32\x11.query.BoundQuery\";\n\x15StreamExecuteResponse\x12\"\n\x06result\x18\x01 \x01(\x0b\x32\x12.query.QueryResult\"\x8f\x01\n\x0c\x42\x65ginRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\"\'\n\rBeginResponse\x12\x16\n\x0etransaction_id\x18\x01 \x01(\x03\"\xa8\x01\n\rCommitRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x16\n\x0etransaction_id\x18\x04 \x01(\x03\"\x10\n\x0e\x43ommitResponse\"\xaa\x01\n\x0fRollbackRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x16\n\x0etransaction_id\x18\x04 \x01(\x03\"\x12\n\x10RollbackResponse\"\xb8\x01\n\x13\x42\x65ginExecuteRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12 \n\x05query\x18\x04 \x01(\x0b\x32\x11.query.BoundQuery\"r\n\x14\x42\x65ginExecuteResponse\x12\x1e\n\x05\x65rror\x18\x01 \x01(\x0b\x32\x0f.vtrpc.RPCError\x12\"\n\x06result\x18\x02 \x01(\x0b\x32\x12.query.QueryResult\x12\x16\n\x0etransaction_id\x18\x03 \x01(\x03\"\xd7\x01\n\x18\x42\x65ginExecuteBatchRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\"\n\x07queries\x18\x04 \x03(\x0b\x32\x11.query.BoundQuery\x12\x16\n\x0e\x61s_transaction\x18\x05 \x01(\x08\"x\n\x19\x42\x65ginExecuteBatchResponse\x12\x1e\n\x05\x65rror\x18\x01 \x01(\x0b\x32\x0f.vtrpc.RPCError\x12#\n\x07results\x18\x02 \x03(\x0b\x32\x12.query.QueryResult\x12\x16\n\x0etransaction_id\x18\x03 \x01(\x03\"\x83\x03\n\x11SplitQueryRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12 \n\x05query\x18\x04 \x01(\x0b\x32\x11.query.BoundQuery\x12\x14\n\x0csplit_column\x18\x05 \x03(\t\x12\x13\n\x0bsplit_count\x18\x06 \x01(\x03\x12\x1f\n\x17num_rows_per_query_part\x18\x08 \x01(\x03\x12\x35\n\talgorithm\x18\t \x01(\x0e\x32\".query.SplitQueryRequest.Algorithm\x12\x1a\n\x12use_split_query_v2\x18\n \x01(\x08\",\n\tAlgorithm\x12\x10\n\x0c\x45QUAL_SPLITS\x10\x00\x12\r\n\tFULL_SCAN\x10\x01\"A\n\nQuerySplit\x12 \n\x05query\x18\x01 \x01(\x0b\x32\x11.query.BoundQuery\x12\x11\n\trow_count\x18\x02 \x01(\x03\"8\n\x12SplitQueryResponse\x12\"\n\x07queries\x18\x01 \x03(\x0b\x32\x11.query.QuerySplit\"\x15\n\x13StreamHealthRequest\"\xb6\x01\n\rRealtimeStats\x12\x14\n\x0chealth_error\x18\x01 \x01(\t\x12\x1d\n\x15seconds_behind_master\x18\x02 \x01(\r\x12\x1c\n\x14\x62inlog_players_count\x18\x03 \x01(\x05\x12\x32\n*seconds_behind_master_filtered_replication\x18\x04 \x01(\x03\x12\x11\n\tcpu_usage\x18\x05 \x01(\x01\x12\x0b\n\x03qps\x18\x06 \x01(\x01\"\xa4\x01\n\x14StreamHealthResponse\x12\x1d\n\x06target\x18\x01 \x01(\x0b\x32\r.query.Target\x12\x0f\n\x07serving\x18\x02 \x01(\x08\x12.\n&tablet_externally_reparented_timestamp\x18\x03 \x01(\x03\x12,\n\x0erealtime_stats\x18\x04 \x01(\x0b\x32\x14.query.RealtimeStats*k\n\x04\x46lag\x12\x08\n\x04NONE\x10\x00\x12\x0f\n\nISINTEGRAL\x10\x80\x02\x12\x0f\n\nISUNSIGNED\x10\x80\x04\x12\x0c\n\x07ISFLOAT\x10\x80\x08\x12\r\n\x08ISQUOTED\x10\x80\x10\x12\x0b\n\x06ISTEXT\x10\x80 \x12\r\n\x08ISBINARY\x10\x80@*\xef\x02\n\x04Type\x12\r\n\tNULL_TYPE\x10\x00\x12\t\n\x04INT8\x10\x81\x02\x12\n\n\x05UINT8\x10\x82\x06\x12\n\n\x05INT16\x10\x83\x02\x12\x0b\n\x06UINT16\x10\x84\x06\x12\n\n\x05INT24\x10\x85\x02\x12\x0b\n\x06UINT24\x10\x86\x06\x12\n\n\x05INT32\x10\x87\x02\x12\x0b\n\x06UINT32\x10\x88\x06\x12\n\n\x05INT64\x10\x89\x02\x12\x0b\n\x06UINT64\x10\x8a\x06\x12\x0c\n\x07\x46LOAT32\x10\x8b\x08\x12\x0c\n\x07\x46LOAT64\x10\x8c\x08\x12\x0e\n\tTIMESTAMP\x10\x8d\x10\x12\t\n\x04\x44\x41TE\x10\x8e\x10\x12\t\n\x04TIME\x10\x8f\x10\x12\r\n\x08\x44\x41TETIME\x10\x90\x10\x12\t\n\x04YEAR\x10\x91\x06\x12\x0b\n\x07\x44\x45\x43IMAL\x10\x12\x12\t\n\x04TEXT\x10\x93\x30\x12\t\n\x04\x42LOB\x10\x94P\x12\x0c\n\x07VARCHAR\x10\x95\x30\x12\x0e\n\tVARBINARY\x10\x96P\x12\t\n\x04\x43HAR\x10\x97\x30\x12\x0b\n\x06\x42INARY\x10\x98P\x12\x08\n\x03\x42IT\x10\x99\x10\x12\t\n\x04\x45NUM\x10\x9a\x10\x12\x08\n\x03SET\x10\x9b\x10\x12\t\n\x05TUPLE\x10\x1c\x42\x1a\n\x18\x63om.youtube.vitess.protob\x06proto3')
+  serialized_pb=_b('\n\x0bquery.proto\x12\x05query\x1a\x0etopodata.proto\x1a\x0bvtrpc.proto\"T\n\x06Target\x12\x10\n\x08keyspace\x18\x01 \x01(\t\x12\r\n\x05shard\x18\x02 \x01(\t\x12)\n\x0btablet_type\x18\x03 \x01(\x0e\x32\x14.topodata.TabletType\"\"\n\x0eVTGateCallerID\x12\x10\n\x08username\x18\x01 \x01(\t\"@\n\nEventToken\x12\x11\n\ttimestamp\x18\x01 \x01(\x03\x12\r\n\x05shard\x18\x02 \x01(\t\x12\x10\n\x08position\x18\x03 \x01(\t\"1\n\x05Value\x12\x19\n\x04type\x18\x01 \x01(\x0e\x32\x0b.query.Type\x12\r\n\x05value\x18\x02 \x01(\x0c\"V\n\x0c\x42indVariable\x12\x19\n\x04type\x18\x01 \x01(\x0e\x32\x0b.query.Type\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x1c\n\x06values\x18\x03 \x03(\x0b\x32\x0c.query.Value\"\xa2\x01\n\nBoundQuery\x12\x0b\n\x03sql\x18\x01 \x01(\t\x12<\n\x0e\x62ind_variables\x18\x02 \x03(\x0b\x32$.query.BoundQuery.BindVariablesEntry\x1aI\n\x12\x42indVariablesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\"\n\x05value\x18\x02 \x01(\x0b\x32\x13.query.BindVariable:\x02\x38\x01\"z\n\x0e\x45xecuteOptions\x12\x1b\n\x13\x65xclude_field_names\x18\x01 \x01(\x08\x12\x1b\n\x13include_event_token\x18\x02 \x01(\x08\x12.\n\x13\x63ompare_event_token\x18\x03 \x01(\x0b\x32\x11.query.EventToken\"0\n\x05\x46ield\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x19\n\x04type\x18\x02 \x01(\x0e\x32\x0b.query.Type\"&\n\x03Row\x12\x0f\n\x07lengths\x18\x01 \x03(\x12\x12\x0e\n\x06values\x18\x02 \x01(\x0c\"G\n\x0cResultExtras\x12&\n\x0b\x65vent_token\x18\x01 \x01(\x0b\x32\x11.query.EventToken\x12\x0f\n\x07\x66resher\x18\x02 \x01(\x08\"\x94\x01\n\x0bQueryResult\x12\x1c\n\x06\x66ields\x18\x01 \x03(\x0b\x32\x0c.query.Field\x12\x15\n\rrows_affected\x18\x02 \x01(\x04\x12\x11\n\tinsert_id\x18\x03 \x01(\x04\x12\x18\n\x04rows\x18\x04 \x03(\x0b\x32\n.query.Row\x12#\n\x06\x65xtras\x18\x05 \x01(\x0b\x32\x13.query.ResultExtras\"\xca\x02\n\x0bStreamEvent\x12\x30\n\nstatements\x18\x01 \x03(\x0b\x32\x1c.query.StreamEvent.Statement\x12&\n\x0b\x65vent_token\x18\x02 \x01(\x0b\x32\x11.query.EventToken\x1a\xe0\x01\n\tStatement\x12\x37\n\x08\x63\x61tegory\x18\x01 \x01(\x0e\x32%.query.StreamEvent.Statement.Category\x12\x12\n\ntable_name\x18\x02 \x01(\t\x12(\n\x12primary_key_fields\x18\x03 \x03(\x0b\x32\x0c.query.Field\x12&\n\x12primary_key_values\x18\x04 \x03(\x0b\x32\n.query.Row\x12\x0b\n\x03sql\x18\x05 \x01(\x0c\"\'\n\x08\x43\x61tegory\x12\t\n\x05\x45rror\x10\x00\x12\x07\n\x03\x44ML\x10\x01\x12\x07\n\x03\x44\x44L\x10\x02\"\xf3\x01\n\x0e\x45xecuteRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12 \n\x05query\x18\x04 \x01(\x0b\x32\x11.query.BoundQuery\x12\x16\n\x0etransaction_id\x18\x05 \x01(\x03\x12&\n\x07options\x18\x06 \x01(\x0b\x32\x15.query.ExecuteOptions\"5\n\x0f\x45xecuteResponse\x12\"\n\x06result\x18\x01 \x01(\x0b\x32\x12.query.QueryResult\"\x92\x02\n\x13\x45xecuteBatchRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\"\n\x07queries\x18\x04 \x03(\x0b\x32\x11.query.BoundQuery\x12\x16\n\x0e\x61s_transaction\x18\x05 \x01(\x08\x12\x16\n\x0etransaction_id\x18\x06 \x01(\x03\x12&\n\x07options\x18\x07 \x01(\x0b\x32\x15.query.ExecuteOptions\";\n\x14\x45xecuteBatchResponse\x12#\n\x07results\x18\x01 \x03(\x0b\x32\x12.query.QueryResult\"\xe1\x01\n\x14StreamExecuteRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12 \n\x05query\x18\x04 \x01(\x0b\x32\x11.query.BoundQuery\x12&\n\x07options\x18\x05 \x01(\x0b\x32\x15.query.ExecuteOptions\";\n\x15StreamExecuteResponse\x12\"\n\x06result\x18\x01 \x01(\x0b\x32\x12.query.QueryResult\"\x8f\x01\n\x0c\x42\x65ginRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\"\'\n\rBeginResponse\x12\x16\n\x0etransaction_id\x18\x01 \x01(\x03\"\xa8\x01\n\rCommitRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x16\n\x0etransaction_id\x18\x04 \x01(\x03\"\x10\n\x0e\x43ommitResponse\"\xaa\x01\n\x0fRollbackRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x16\n\x0etransaction_id\x18\x04 \x01(\x03\"\x12\n\x10RollbackResponse\"\xb7\x01\n\x0ePrepareRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x16\n\x0etransaction_id\x18\x04 \x01(\x03\x12\x0c\n\x04\x64tid\x18\x05 \x01(\t\"\x11\n\x0fPrepareResponse\"\xa6\x01\n\x15\x43ommitPreparedRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x0c\n\x04\x64tid\x18\x04 \x01(\t\"\x18\n\x16\x43ommitPreparedResponse\"\xc0\x01\n\x17RollbackPreparedRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x16\n\x0etransaction_id\x18\x04 \x01(\x03\x12\x0c\n\x04\x64tid\x18\x05 \x01(\t\"\x1a\n\x18RollbackPreparedResponse\"\xce\x01\n\x18\x43reateTransactionRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x0c\n\x04\x64tid\x18\x04 \x01(\t\x12#\n\x0cparticipants\x18\x05 \x03(\x0b\x32\r.query.Target\"\x1b\n\x19\x43reateTransactionResponse\"\xbb\x01\n\x12StartCommitRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x16\n\x0etransaction_id\x18\x04 \x01(\x03\x12\x0c\n\x04\x64tid\x18\x05 \x01(\t\"\x15\n\x13StartCommitResponse\"\xbb\x01\n\x12SetRollbackRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x16\n\x0etransaction_id\x18\x04 \x01(\x03\x12\x0c\n\x04\x64tid\x18\x05 \x01(\t\"\x15\n\x13SetRollbackResponse\"\xab\x01\n\x1a\x43oncludeTransactionRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x0c\n\x04\x64tid\x18\x04 \x01(\t\"\x1d\n\x1b\x43oncludeTransactionResponse\"\xa7\x01\n\x16ReadTransactionRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x0c\n\x04\x64tid\x18\x04 \x01(\t\"G\n\x17ReadTransactionResponse\x12,\n\x08metadata\x18\x01 \x01(\x0b\x32\x1a.query.TransactionMetadata\"\xe0\x01\n\x13\x42\x65ginExecuteRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12 \n\x05query\x18\x04 \x01(\x0b\x32\x11.query.BoundQuery\x12&\n\x07options\x18\x05 \x01(\x0b\x32\x15.query.ExecuteOptions\"r\n\x14\x42\x65ginExecuteResponse\x12\x1e\n\x05\x65rror\x18\x01 \x01(\x0b\x32\x0f.vtrpc.RPCError\x12\"\n\x06result\x18\x02 \x01(\x0b\x32\x12.query.QueryResult\x12\x16\n\x0etransaction_id\x18\x03 \x01(\x03\"\xff\x01\n\x18\x42\x65ginExecuteBatchRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\"\n\x07queries\x18\x04 \x03(\x0b\x32\x11.query.BoundQuery\x12\x16\n\x0e\x61s_transaction\x18\x05 \x01(\x08\x12&\n\x07options\x18\x06 \x01(\x0b\x32\x15.query.ExecuteOptions\"x\n\x19\x42\x65ginExecuteBatchResponse\x12\x1e\n\x05\x65rror\x18\x01 \x01(\x0b\x32\x0f.vtrpc.RPCError\x12#\n\x07results\x18\x02 \x03(\x0b\x32\x12.query.QueryResult\x12\x16\n\x0etransaction_id\x18\x03 \x01(\x03\"\xe7\x02\n\x11SplitQueryRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12 \n\x05query\x18\x04 \x01(\x0b\x32\x11.query.BoundQuery\x12\x14\n\x0csplit_column\x18\x05 \x03(\t\x12\x13\n\x0bsplit_count\x18\x06 \x01(\x03\x12\x1f\n\x17num_rows_per_query_part\x18\x08 \x01(\x03\x12\x35\n\talgorithm\x18\t \x01(\x0e\x32\".query.SplitQueryRequest.Algorithm\",\n\tAlgorithm\x12\x10\n\x0c\x45QUAL_SPLITS\x10\x00\x12\r\n\tFULL_SCAN\x10\x01\"A\n\nQuerySplit\x12 \n\x05query\x18\x01 \x01(\x0b\x32\x11.query.BoundQuery\x12\x11\n\trow_count\x18\x02 \x01(\x03\"8\n\x12SplitQueryResponse\x12\"\n\x07queries\x18\x01 \x03(\x0b\x32\x11.query.QuerySplit\"\x15\n\x13StreamHealthRequest\"\xb6\x01\n\rRealtimeStats\x12\x14\n\x0chealth_error\x18\x01 \x01(\t\x12\x1d\n\x15seconds_behind_master\x18\x02 \x01(\r\x12\x1c\n\x14\x62inlog_players_count\x18\x03 \x01(\x05\x12\x32\n*seconds_behind_master_filtered_replication\x18\x04 \x01(\x03\x12\x11\n\tcpu_usage\x18\x05 \x01(\x01\x12\x0b\n\x03qps\x18\x06 \x01(\x01\"\xa4\x01\n\x14StreamHealthResponse\x12\x1d\n\x06target\x18\x01 \x01(\x0b\x32\r.query.Target\x12\x0f\n\x07serving\x18\x02 \x01(\x08\x12.\n&tablet_externally_reparented_timestamp\x18\x03 \x01(\x03\x12,\n\x0erealtime_stats\x18\x04 \x01(\x0b\x32\x14.query.RealtimeStats\"\xbb\x01\n\x13UpdateStreamRequest\x12,\n\x13\x65\x66\x66\x65\x63tive_caller_id\x18\x01 \x01(\x0b\x32\x0f.vtrpc.CallerID\x12\x32\n\x13immediate_caller_id\x18\x02 \x01(\x0b\x32\x15.query.VTGateCallerID\x12\x1d\n\x06target\x18\x03 \x01(\x0b\x32\r.query.Target\x12\x10\n\x08position\x18\x04 \x01(\t\x12\x11\n\ttimestamp\x18\x05 \x01(\x03\"9\n\x14UpdateStreamResponse\x12!\n\x05\x65vent\x18\x01 \x01(\x0b\x32\x12.query.StreamEvent\"\x9c\x01\n\x13TransactionMetadata\x12\x0c\n\x04\x64tid\x18\x01 \x01(\t\x12&\n\x05state\x18\x02 \x01(\x0e\x32\x17.query.TransactionState\x12\x14\n\x0ctime_created\x18\x03 \x01(\x03\x12\x14\n\x0ctime_updated\x18\x04 \x01(\x03\x12#\n\x0cparticipants\x18\x05 \x03(\x0b\x32\r.query.Target*k\n\x04\x46lag\x12\x08\n\x04NONE\x10\x00\x12\x0f\n\nISINTEGRAL\x10\x80\x02\x12\x0f\n\nISUNSIGNED\x10\x80\x04\x12\x0c\n\x07ISFLOAT\x10\x80\x08\x12\r\n\x08ISQUOTED\x10\x80\x10\x12\x0b\n\x06ISTEXT\x10\x80 \x12\r\n\x08ISBINARY\x10\x80@*\xef\x02\n\x04Type\x12\r\n\tNULL_TYPE\x10\x00\x12\t\n\x04INT8\x10\x81\x02\x12\n\n\x05UINT8\x10\x82\x06\x12\n\n\x05INT16\x10\x83\x02\x12\x0b\n\x06UINT16\x10\x84\x06\x12\n\n\x05INT24\x10\x85\x02\x12\x0b\n\x06UINT24\x10\x86\x06\x12\n\n\x05INT32\x10\x87\x02\x12\x0b\n\x06UINT32\x10\x88\x06\x12\n\n\x05INT64\x10\x89\x02\x12\x0b\n\x06UINT64\x10\x8a\x06\x12\x0c\n\x07\x46LOAT32\x10\x8b\x08\x12\x0c\n\x07\x46LOAT64\x10\x8c\x08\x12\x0e\n\tTIMESTAMP\x10\x8d\x10\x12\t\n\x04\x44\x41TE\x10\x8e\x10\x12\t\n\x04TIME\x10\x8f\x10\x12\r\n\x08\x44\x41TETIME\x10\x90\x10\x12\t\n\x04YEAR\x10\x91\x06\x12\x0b\n\x07\x44\x45\x43IMAL\x10\x12\x12\t\n\x04TEXT\x10\x93\x30\x12\t\n\x04\x42LOB\x10\x94P\x12\x0c\n\x07VARCHAR\x10\x95\x30\x12\x0e\n\tVARBINARY\x10\x96P\x12\t\n\x04\x43HAR\x10\x97\x30\x12\x0b\n\x06\x42INARY\x10\x98P\x12\x08\n\x03\x42IT\x10\x99\x10\x12\t\n\x04\x45NUM\x10\x9a\x10\x12\x08\n\x03SET\x10\x9b\x10\x12\t\n\x05TUPLE\x10\x1c*F\n\x10TransactionState\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x0b\n\x07PREPARE\x10\x01\x12\n\n\x06\x43OMMIT\x10\x02\x12\x0c\n\x08ROLLBACK\x10\x03\x42\x1a\n\x18\x63om.youtube.vitess.protob\x06proto3')
   ,
   dependencies=[topodata__pb2.DESCRIPTOR,vtrpc__pb2.DESCRIPTOR,])
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
@@ -64,8 +64,8 @@ _FLAG = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=3590,
-  serialized_end=3697,
+  serialized_start=6539,
+  serialized_end=6646,
 )
 _sym_db.RegisterEnumDescriptor(_FLAG)
 
@@ -195,12 +195,43 @@ _TYPE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=3700,
-  serialized_end=4067,
+  serialized_start=6649,
+  serialized_end=7016,
 )
 _sym_db.RegisterEnumDescriptor(_TYPE)
 
 Type = enum_type_wrapper.EnumTypeWrapper(_TYPE)
+_TRANSACTIONSTATE = _descriptor.EnumDescriptor(
+  name='TransactionState',
+  full_name='query.TransactionState',
+  filename=None,
+  file=DESCRIPTOR,
+  values=[
+    _descriptor.EnumValueDescriptor(
+      name='UNKNOWN', index=0, number=0,
+      options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='PREPARE', index=1, number=1,
+      options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='COMMIT', index=2, number=2,
+      options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='ROLLBACK', index=3, number=3,
+      options=None,
+      type=None),
+  ],
+  containing_type=None,
+  options=None,
+  serialized_start=7018,
+  serialized_end=7088,
+)
+_sym_db.RegisterEnumDescriptor(_TRANSACTIONSTATE)
+
+TransactionState = enum_type_wrapper.EnumTypeWrapper(_TRANSACTIONSTATE)
 NONE = 0
 ISINTEGRAL = 256
 ISUNSIGNED = 512
@@ -237,7 +268,37 @@ BIT = 2073
 ENUM = 2074
 SET = 2075
 TUPLE = 28
+UNKNOWN = 0
+PREPARE = 1
+COMMIT = 2
+ROLLBACK = 3
 
+
+_STREAMEVENT_STATEMENT_CATEGORY = _descriptor.EnumDescriptor(
+  name='Category',
+  full_name='query.StreamEvent.Statement.Category',
+  filename=None,
+  file=DESCRIPTOR,
+  values=[
+    _descriptor.EnumValueDescriptor(
+      name='Error', index=0, number=0,
+      options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='DML', index=1, number=1,
+      options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='DDL', index=2, number=2,
+      options=None,
+      type=None),
+  ],
+  containing_type=None,
+  options=None,
+  serialized_start=1273,
+  serialized_end=1312,
+)
+_sym_db.RegisterEnumDescriptor(_STREAMEVENT_STATEMENT_CATEGORY)
 
 _SPLITQUERYREQUEST_ALGORITHM = _descriptor.EnumDescriptor(
   name='Algorithm',
@@ -256,8 +317,8 @@ _SPLITQUERYREQUEST_ALGORITHM = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=3044,
-  serialized_end=3088,
+  serialized_start=5585,
+  serialized_end=5629,
 )
 _sym_db.RegisterEnumDescriptor(_SPLITQUERYREQUEST_ALGORITHM)
 
@@ -338,6 +399,51 @@ _VTGATECALLERID = _descriptor.Descriptor(
 )
 
 
+_EVENTTOKEN = _descriptor.Descriptor(
+  name='EventToken',
+  full_name='query.EventToken',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='timestamp', full_name='query.EventToken.timestamp', index=0,
+      number=1, type=3, cpp_type=2, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='shard', full_name='query.EventToken.shard', index=1,
+      number=2, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='position', full_name='query.EventToken.position', index=2,
+      number=3, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=173,
+  serialized_end=237,
+)
+
+
 _VALUE = _descriptor.Descriptor(
   name='Value',
   full_name='query.Value',
@@ -371,8 +477,8 @@ _VALUE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=173,
-  serialized_end=222,
+  serialized_start=239,
+  serialized_end=288,
 )
 
 
@@ -416,8 +522,8 @@ _BINDVARIABLE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=224,
-  serialized_end=310,
+  serialized_start=290,
+  serialized_end=376,
 )
 
 
@@ -454,8 +560,8 @@ _BOUNDQUERY_BINDVARIABLESENTRY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=402,
-  serialized_end=475,
+  serialized_start=468,
+  serialized_end=541,
 )
 
 _BOUNDQUERY = _descriptor.Descriptor(
@@ -491,8 +597,53 @@ _BOUNDQUERY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=313,
-  serialized_end=475,
+  serialized_start=379,
+  serialized_end=541,
+)
+
+
+_EXECUTEOPTIONS = _descriptor.Descriptor(
+  name='ExecuteOptions',
+  full_name='query.ExecuteOptions',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='exclude_field_names', full_name='query.ExecuteOptions.exclude_field_names', index=0,
+      number=1, type=8, cpp_type=7, label=1,
+      has_default_value=False, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='include_event_token', full_name='query.ExecuteOptions.include_event_token', index=1,
+      number=2, type=8, cpp_type=7, label=1,
+      has_default_value=False, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='compare_event_token', full_name='query.ExecuteOptions.compare_event_token', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=543,
+  serialized_end=665,
 )
 
 
@@ -529,8 +680,8 @@ _FIELD = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=477,
-  serialized_end=525,
+  serialized_start=667,
+  serialized_end=715,
 )
 
 
@@ -567,8 +718,46 @@ _ROW = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=527,
-  serialized_end=565,
+  serialized_start=717,
+  serialized_end=755,
+)
+
+
+_RESULTEXTRAS = _descriptor.Descriptor(
+  name='ResultExtras',
+  full_name='query.ResultExtras',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='event_token', full_name='query.ResultExtras.event_token', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='fresher', full_name='query.ResultExtras.fresher', index=1,
+      number=2, type=8, cpp_type=7, label=1,
+      has_default_value=False, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=757,
+  serialized_end=828,
 )
 
 
@@ -607,6 +796,13 @@ _QUERYRESULT = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    _descriptor.FieldDescriptor(
+      name='extras', full_name='query.QueryResult.extras', index=4,
+      number=5, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -619,8 +815,105 @@ _QUERYRESULT = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=567,
-  serialized_end=678,
+  serialized_start=831,
+  serialized_end=979,
+)
+
+
+_STREAMEVENT_STATEMENT = _descriptor.Descriptor(
+  name='Statement',
+  full_name='query.StreamEvent.Statement',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='category', full_name='query.StreamEvent.Statement.category', index=0,
+      number=1, type=14, cpp_type=8, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='table_name', full_name='query.StreamEvent.Statement.table_name', index=1,
+      number=2, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='primary_key_fields', full_name='query.StreamEvent.Statement.primary_key_fields', index=2,
+      number=3, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='primary_key_values', full_name='query.StreamEvent.Statement.primary_key_values', index=3,
+      number=4, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='sql', full_name='query.StreamEvent.Statement.sql', index=4,
+      number=5, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b(""),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+    _STREAMEVENT_STATEMENT_CATEGORY,
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=1088,
+  serialized_end=1312,
+)
+
+_STREAMEVENT = _descriptor.Descriptor(
+  name='StreamEvent',
+  full_name='query.StreamEvent',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='statements', full_name='query.StreamEvent.statements', index=0,
+      number=1, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='event_token', full_name='query.StreamEvent.event_token', index=1,
+      number=2, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[_STREAMEVENT_STATEMENT, ],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=982,
+  serialized_end=1312,
 )
 
 
@@ -666,6 +959,13 @@ _EXECUTEREQUEST = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    _descriptor.FieldDescriptor(
+      name='options', full_name='query.ExecuteRequest.options', index=5,
+      number=6, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -678,8 +978,8 @@ _EXECUTEREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=681,
-  serialized_end=884,
+  serialized_start=1315,
+  serialized_end=1558,
 )
 
 
@@ -709,8 +1009,8 @@ _EXECUTERESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=886,
-  serialized_end=939,
+  serialized_start=1560,
+  serialized_end=1613,
 )
 
 
@@ -763,6 +1063,13 @@ _EXECUTEBATCHREQUEST = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    _descriptor.FieldDescriptor(
+      name='options', full_name='query.ExecuteBatchRequest.options', index=6,
+      number=7, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -775,8 +1082,8 @@ _EXECUTEBATCHREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=942,
-  serialized_end=1176,
+  serialized_start=1616,
+  serialized_end=1890,
 )
 
 
@@ -806,8 +1113,8 @@ _EXECUTEBATCHRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1178,
-  serialized_end=1237,
+  serialized_start=1892,
+  serialized_end=1951,
 )
 
 
@@ -846,6 +1153,13 @@ _STREAMEXECUTEREQUEST = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    _descriptor.FieldDescriptor(
+      name='options', full_name='query.StreamExecuteRequest.options', index=4,
+      number=5, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -858,8 +1172,8 @@ _STREAMEXECUTEREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1240,
-  serialized_end=1425,
+  serialized_start=1954,
+  serialized_end=2179,
 )
 
 
@@ -889,8 +1203,8 @@ _STREAMEXECUTERESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1427,
-  serialized_end=1486,
+  serialized_start=2181,
+  serialized_end=2240,
 )
 
 
@@ -934,8 +1248,8 @@ _BEGINREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1489,
-  serialized_end=1632,
+  serialized_start=2243,
+  serialized_end=2386,
 )
 
 
@@ -965,8 +1279,8 @@ _BEGINRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1634,
-  serialized_end=1673,
+  serialized_start=2388,
+  serialized_end=2427,
 )
 
 
@@ -1017,8 +1331,8 @@ _COMMITREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1676,
-  serialized_end=1844,
+  serialized_start=2430,
+  serialized_end=2598,
 )
 
 
@@ -1041,8 +1355,8 @@ _COMMITRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1846,
-  serialized_end=1862,
+  serialized_start=2600,
+  serialized_end=2616,
 )
 
 
@@ -1093,8 +1407,8 @@ _ROLLBACKREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1865,
-  serialized_end=2035,
+  serialized_start=2619,
+  serialized_end=2789,
 )
 
 
@@ -1117,8 +1431,658 @@ _ROLLBACKRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2037,
-  serialized_end=2055,
+  serialized_start=2791,
+  serialized_end=2809,
+)
+
+
+_PREPAREREQUEST = _descriptor.Descriptor(
+  name='PrepareRequest',
+  full_name='query.PrepareRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='effective_caller_id', full_name='query.PrepareRequest.effective_caller_id', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='immediate_caller_id', full_name='query.PrepareRequest.immediate_caller_id', index=1,
+      number=2, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='target', full_name='query.PrepareRequest.target', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='transaction_id', full_name='query.PrepareRequest.transaction_id', index=3,
+      number=4, type=3, cpp_type=2, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='dtid', full_name='query.PrepareRequest.dtid', index=4,
+      number=5, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=2812,
+  serialized_end=2995,
+)
+
+
+_PREPARERESPONSE = _descriptor.Descriptor(
+  name='PrepareResponse',
+  full_name='query.PrepareResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=2997,
+  serialized_end=3014,
+)
+
+
+_COMMITPREPAREDREQUEST = _descriptor.Descriptor(
+  name='CommitPreparedRequest',
+  full_name='query.CommitPreparedRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='effective_caller_id', full_name='query.CommitPreparedRequest.effective_caller_id', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='immediate_caller_id', full_name='query.CommitPreparedRequest.immediate_caller_id', index=1,
+      number=2, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='target', full_name='query.CommitPreparedRequest.target', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='dtid', full_name='query.CommitPreparedRequest.dtid', index=3,
+      number=4, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=3017,
+  serialized_end=3183,
+)
+
+
+_COMMITPREPAREDRESPONSE = _descriptor.Descriptor(
+  name='CommitPreparedResponse',
+  full_name='query.CommitPreparedResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=3185,
+  serialized_end=3209,
+)
+
+
+_ROLLBACKPREPAREDREQUEST = _descriptor.Descriptor(
+  name='RollbackPreparedRequest',
+  full_name='query.RollbackPreparedRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='effective_caller_id', full_name='query.RollbackPreparedRequest.effective_caller_id', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='immediate_caller_id', full_name='query.RollbackPreparedRequest.immediate_caller_id', index=1,
+      number=2, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='target', full_name='query.RollbackPreparedRequest.target', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='transaction_id', full_name='query.RollbackPreparedRequest.transaction_id', index=3,
+      number=4, type=3, cpp_type=2, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='dtid', full_name='query.RollbackPreparedRequest.dtid', index=4,
+      number=5, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=3212,
+  serialized_end=3404,
+)
+
+
+_ROLLBACKPREPAREDRESPONSE = _descriptor.Descriptor(
+  name='RollbackPreparedResponse',
+  full_name='query.RollbackPreparedResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=3406,
+  serialized_end=3432,
+)
+
+
+_CREATETRANSACTIONREQUEST = _descriptor.Descriptor(
+  name='CreateTransactionRequest',
+  full_name='query.CreateTransactionRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='effective_caller_id', full_name='query.CreateTransactionRequest.effective_caller_id', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='immediate_caller_id', full_name='query.CreateTransactionRequest.immediate_caller_id', index=1,
+      number=2, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='target', full_name='query.CreateTransactionRequest.target', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='dtid', full_name='query.CreateTransactionRequest.dtid', index=3,
+      number=4, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='participants', full_name='query.CreateTransactionRequest.participants', index=4,
+      number=5, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=3435,
+  serialized_end=3641,
+)
+
+
+_CREATETRANSACTIONRESPONSE = _descriptor.Descriptor(
+  name='CreateTransactionResponse',
+  full_name='query.CreateTransactionResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=3643,
+  serialized_end=3670,
+)
+
+
+_STARTCOMMITREQUEST = _descriptor.Descriptor(
+  name='StartCommitRequest',
+  full_name='query.StartCommitRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='effective_caller_id', full_name='query.StartCommitRequest.effective_caller_id', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='immediate_caller_id', full_name='query.StartCommitRequest.immediate_caller_id', index=1,
+      number=2, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='target', full_name='query.StartCommitRequest.target', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='transaction_id', full_name='query.StartCommitRequest.transaction_id', index=3,
+      number=4, type=3, cpp_type=2, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='dtid', full_name='query.StartCommitRequest.dtid', index=4,
+      number=5, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=3673,
+  serialized_end=3860,
+)
+
+
+_STARTCOMMITRESPONSE = _descriptor.Descriptor(
+  name='StartCommitResponse',
+  full_name='query.StartCommitResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=3862,
+  serialized_end=3883,
+)
+
+
+_SETROLLBACKREQUEST = _descriptor.Descriptor(
+  name='SetRollbackRequest',
+  full_name='query.SetRollbackRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='effective_caller_id', full_name='query.SetRollbackRequest.effective_caller_id', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='immediate_caller_id', full_name='query.SetRollbackRequest.immediate_caller_id', index=1,
+      number=2, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='target', full_name='query.SetRollbackRequest.target', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='transaction_id', full_name='query.SetRollbackRequest.transaction_id', index=3,
+      number=4, type=3, cpp_type=2, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='dtid', full_name='query.SetRollbackRequest.dtid', index=4,
+      number=5, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=3886,
+  serialized_end=4073,
+)
+
+
+_SETROLLBACKRESPONSE = _descriptor.Descriptor(
+  name='SetRollbackResponse',
+  full_name='query.SetRollbackResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=4075,
+  serialized_end=4096,
+)
+
+
+_CONCLUDETRANSACTIONREQUEST = _descriptor.Descriptor(
+  name='ConcludeTransactionRequest',
+  full_name='query.ConcludeTransactionRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='effective_caller_id', full_name='query.ConcludeTransactionRequest.effective_caller_id', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='immediate_caller_id', full_name='query.ConcludeTransactionRequest.immediate_caller_id', index=1,
+      number=2, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='target', full_name='query.ConcludeTransactionRequest.target', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='dtid', full_name='query.ConcludeTransactionRequest.dtid', index=3,
+      number=4, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=4099,
+  serialized_end=4270,
+)
+
+
+_CONCLUDETRANSACTIONRESPONSE = _descriptor.Descriptor(
+  name='ConcludeTransactionResponse',
+  full_name='query.ConcludeTransactionResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=4272,
+  serialized_end=4301,
+)
+
+
+_READTRANSACTIONREQUEST = _descriptor.Descriptor(
+  name='ReadTransactionRequest',
+  full_name='query.ReadTransactionRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='effective_caller_id', full_name='query.ReadTransactionRequest.effective_caller_id', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='immediate_caller_id', full_name='query.ReadTransactionRequest.immediate_caller_id', index=1,
+      number=2, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='target', full_name='query.ReadTransactionRequest.target', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='dtid', full_name='query.ReadTransactionRequest.dtid', index=3,
+      number=4, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=4304,
+  serialized_end=4471,
+)
+
+
+_READTRANSACTIONRESPONSE = _descriptor.Descriptor(
+  name='ReadTransactionResponse',
+  full_name='query.ReadTransactionResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='metadata', full_name='query.ReadTransactionResponse.metadata', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=4473,
+  serialized_end=4544,
 )
 
 
@@ -1157,6 +2121,13 @@ _BEGINEXECUTEREQUEST = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    _descriptor.FieldDescriptor(
+      name='options', full_name='query.BeginExecuteRequest.options', index=4,
+      number=5, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -1169,8 +2140,8 @@ _BEGINEXECUTEREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2058,
-  serialized_end=2242,
+  serialized_start=4547,
+  serialized_end=4771,
 )
 
 
@@ -1214,8 +2185,8 @@ _BEGINEXECUTERESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2244,
-  serialized_end=2358,
+  serialized_start=4773,
+  serialized_end=4887,
 )
 
 
@@ -1261,6 +2232,13 @@ _BEGINEXECUTEBATCHREQUEST = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    _descriptor.FieldDescriptor(
+      name='options', full_name='query.BeginExecuteBatchRequest.options', index=5,
+      number=6, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -1273,8 +2251,8 @@ _BEGINEXECUTEBATCHREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2361,
-  serialized_end=2576,
+  serialized_start=4890,
+  serialized_end=5145,
 )
 
 
@@ -1318,8 +2296,8 @@ _BEGINEXECUTEBATCHRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2578,
-  serialized_end=2698,
+  serialized_start=5147,
+  serialized_end=5267,
 )
 
 
@@ -1386,13 +2364,6 @@ _SPLITQUERYREQUEST = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
-    _descriptor.FieldDescriptor(
-      name='use_split_query_v2', full_name='query.SplitQueryRequest.use_split_query_v2', index=8,
-      number=10, type=8, cpp_type=7, label=1,
-      has_default_value=False, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
   ],
   extensions=[
   ],
@@ -1406,8 +2377,8 @@ _SPLITQUERYREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2701,
-  serialized_end=3088,
+  serialized_start=5270,
+  serialized_end=5629,
 )
 
 
@@ -1444,8 +2415,8 @@ _QUERYSPLIT = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=3090,
-  serialized_end=3155,
+  serialized_start=5631,
+  serialized_end=5696,
 )
 
 
@@ -1475,8 +2446,8 @@ _SPLITQUERYRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=3157,
-  serialized_end=3213,
+  serialized_start=5698,
+  serialized_end=5754,
 )
 
 
@@ -1499,8 +2470,8 @@ _STREAMHEALTHREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=3215,
-  serialized_end=3236,
+  serialized_start=5756,
+  serialized_end=5777,
 )
 
 
@@ -1542,14 +2513,14 @@ _REALTIMESTATS = _descriptor.Descriptor(
     _descriptor.FieldDescriptor(
       name='cpu_usage', full_name='query.RealtimeStats.cpu_usage', index=4,
       number=5, type=1, cpp_type=5, label=1,
-      has_default_value=False, default_value=0,
+      has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     _descriptor.FieldDescriptor(
       name='qps', full_name='query.RealtimeStats.qps', index=5,
       number=6, type=1, cpp_type=5, label=1,
-      has_default_value=False, default_value=0,
+      has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
@@ -1565,8 +2536,8 @@ _REALTIMESTATS = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=3239,
-  serialized_end=3421,
+  serialized_start=5780,
+  serialized_end=5962,
 )
 
 
@@ -1617,8 +2588,157 @@ _STREAMHEALTHRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=3424,
-  serialized_end=3588,
+  serialized_start=5965,
+  serialized_end=6129,
+)
+
+
+_UPDATESTREAMREQUEST = _descriptor.Descriptor(
+  name='UpdateStreamRequest',
+  full_name='query.UpdateStreamRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='effective_caller_id', full_name='query.UpdateStreamRequest.effective_caller_id', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='immediate_caller_id', full_name='query.UpdateStreamRequest.immediate_caller_id', index=1,
+      number=2, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='target', full_name='query.UpdateStreamRequest.target', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='position', full_name='query.UpdateStreamRequest.position', index=3,
+      number=4, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='timestamp', full_name='query.UpdateStreamRequest.timestamp', index=4,
+      number=5, type=3, cpp_type=2, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=6132,
+  serialized_end=6319,
+)
+
+
+_UPDATESTREAMRESPONSE = _descriptor.Descriptor(
+  name='UpdateStreamResponse',
+  full_name='query.UpdateStreamResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='event', full_name='query.UpdateStreamResponse.event', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=6321,
+  serialized_end=6378,
+)
+
+
+_TRANSACTIONMETADATA = _descriptor.Descriptor(
+  name='TransactionMetadata',
+  full_name='query.TransactionMetadata',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='dtid', full_name='query.TransactionMetadata.dtid', index=0,
+      number=1, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='state', full_name='query.TransactionMetadata.state', index=1,
+      number=2, type=14, cpp_type=8, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='time_created', full_name='query.TransactionMetadata.time_created', index=2,
+      number=3, type=3, cpp_type=2, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='time_updated', full_name='query.TransactionMetadata.time_updated', index=3,
+      number=4, type=3, cpp_type=2, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='participants', full_name='query.TransactionMetadata.participants', index=4,
+      number=5, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=6381,
+  serialized_end=6537,
 )
 
 _TARGET.fields_by_name['tablet_type'].enum_type = topodata__pb2._TABLETTYPE
@@ -1628,23 +2748,36 @@ _BINDVARIABLE.fields_by_name['values'].message_type = _VALUE
 _BOUNDQUERY_BINDVARIABLESENTRY.fields_by_name['value'].message_type = _BINDVARIABLE
 _BOUNDQUERY_BINDVARIABLESENTRY.containing_type = _BOUNDQUERY
 _BOUNDQUERY.fields_by_name['bind_variables'].message_type = _BOUNDQUERY_BINDVARIABLESENTRY
+_EXECUTEOPTIONS.fields_by_name['compare_event_token'].message_type = _EVENTTOKEN
 _FIELD.fields_by_name['type'].enum_type = _TYPE
+_RESULTEXTRAS.fields_by_name['event_token'].message_type = _EVENTTOKEN
 _QUERYRESULT.fields_by_name['fields'].message_type = _FIELD
 _QUERYRESULT.fields_by_name['rows'].message_type = _ROW
+_QUERYRESULT.fields_by_name['extras'].message_type = _RESULTEXTRAS
+_STREAMEVENT_STATEMENT.fields_by_name['category'].enum_type = _STREAMEVENT_STATEMENT_CATEGORY
+_STREAMEVENT_STATEMENT.fields_by_name['primary_key_fields'].message_type = _FIELD
+_STREAMEVENT_STATEMENT.fields_by_name['primary_key_values'].message_type = _ROW
+_STREAMEVENT_STATEMENT.containing_type = _STREAMEVENT
+_STREAMEVENT_STATEMENT_CATEGORY.containing_type = _STREAMEVENT_STATEMENT
+_STREAMEVENT.fields_by_name['statements'].message_type = _STREAMEVENT_STATEMENT
+_STREAMEVENT.fields_by_name['event_token'].message_type = _EVENTTOKEN
 _EXECUTEREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
 _EXECUTEREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
 _EXECUTEREQUEST.fields_by_name['target'].message_type = _TARGET
 _EXECUTEREQUEST.fields_by_name['query'].message_type = _BOUNDQUERY
+_EXECUTEREQUEST.fields_by_name['options'].message_type = _EXECUTEOPTIONS
 _EXECUTERESPONSE.fields_by_name['result'].message_type = _QUERYRESULT
 _EXECUTEBATCHREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
 _EXECUTEBATCHREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
 _EXECUTEBATCHREQUEST.fields_by_name['target'].message_type = _TARGET
 _EXECUTEBATCHREQUEST.fields_by_name['queries'].message_type = _BOUNDQUERY
+_EXECUTEBATCHREQUEST.fields_by_name['options'].message_type = _EXECUTEOPTIONS
 _EXECUTEBATCHRESPONSE.fields_by_name['results'].message_type = _QUERYRESULT
 _STREAMEXECUTEREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
 _STREAMEXECUTEREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
 _STREAMEXECUTEREQUEST.fields_by_name['target'].message_type = _TARGET
 _STREAMEXECUTEREQUEST.fields_by_name['query'].message_type = _BOUNDQUERY
+_STREAMEXECUTEREQUEST.fields_by_name['options'].message_type = _EXECUTEOPTIONS
 _STREAMEXECUTERESPONSE.fields_by_name['result'].message_type = _QUERYRESULT
 _BEGINREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
 _BEGINREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
@@ -1655,16 +2788,44 @@ _COMMITREQUEST.fields_by_name['target'].message_type = _TARGET
 _ROLLBACKREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
 _ROLLBACKREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
 _ROLLBACKREQUEST.fields_by_name['target'].message_type = _TARGET
+_PREPAREREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
+_PREPAREREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
+_PREPAREREQUEST.fields_by_name['target'].message_type = _TARGET
+_COMMITPREPAREDREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
+_COMMITPREPAREDREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
+_COMMITPREPAREDREQUEST.fields_by_name['target'].message_type = _TARGET
+_ROLLBACKPREPAREDREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
+_ROLLBACKPREPAREDREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
+_ROLLBACKPREPAREDREQUEST.fields_by_name['target'].message_type = _TARGET
+_CREATETRANSACTIONREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
+_CREATETRANSACTIONREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
+_CREATETRANSACTIONREQUEST.fields_by_name['target'].message_type = _TARGET
+_CREATETRANSACTIONREQUEST.fields_by_name['participants'].message_type = _TARGET
+_STARTCOMMITREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
+_STARTCOMMITREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
+_STARTCOMMITREQUEST.fields_by_name['target'].message_type = _TARGET
+_SETROLLBACKREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
+_SETROLLBACKREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
+_SETROLLBACKREQUEST.fields_by_name['target'].message_type = _TARGET
+_CONCLUDETRANSACTIONREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
+_CONCLUDETRANSACTIONREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
+_CONCLUDETRANSACTIONREQUEST.fields_by_name['target'].message_type = _TARGET
+_READTRANSACTIONREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
+_READTRANSACTIONREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
+_READTRANSACTIONREQUEST.fields_by_name['target'].message_type = _TARGET
+_READTRANSACTIONRESPONSE.fields_by_name['metadata'].message_type = _TRANSACTIONMETADATA
 _BEGINEXECUTEREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
 _BEGINEXECUTEREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
 _BEGINEXECUTEREQUEST.fields_by_name['target'].message_type = _TARGET
 _BEGINEXECUTEREQUEST.fields_by_name['query'].message_type = _BOUNDQUERY
+_BEGINEXECUTEREQUEST.fields_by_name['options'].message_type = _EXECUTEOPTIONS
 _BEGINEXECUTERESPONSE.fields_by_name['error'].message_type = vtrpc__pb2._RPCERROR
 _BEGINEXECUTERESPONSE.fields_by_name['result'].message_type = _QUERYRESULT
 _BEGINEXECUTEBATCHREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
 _BEGINEXECUTEBATCHREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
 _BEGINEXECUTEBATCHREQUEST.fields_by_name['target'].message_type = _TARGET
 _BEGINEXECUTEBATCHREQUEST.fields_by_name['queries'].message_type = _BOUNDQUERY
+_BEGINEXECUTEBATCHREQUEST.fields_by_name['options'].message_type = _EXECUTEOPTIONS
 _BEGINEXECUTEBATCHRESPONSE.fields_by_name['error'].message_type = vtrpc__pb2._RPCERROR
 _BEGINEXECUTEBATCHRESPONSE.fields_by_name['results'].message_type = _QUERYRESULT
 _SPLITQUERYREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
@@ -1677,14 +2838,24 @@ _QUERYSPLIT.fields_by_name['query'].message_type = _BOUNDQUERY
 _SPLITQUERYRESPONSE.fields_by_name['queries'].message_type = _QUERYSPLIT
 _STREAMHEALTHRESPONSE.fields_by_name['target'].message_type = _TARGET
 _STREAMHEALTHRESPONSE.fields_by_name['realtime_stats'].message_type = _REALTIMESTATS
+_UPDATESTREAMREQUEST.fields_by_name['effective_caller_id'].message_type = vtrpc__pb2._CALLERID
+_UPDATESTREAMREQUEST.fields_by_name['immediate_caller_id'].message_type = _VTGATECALLERID
+_UPDATESTREAMREQUEST.fields_by_name['target'].message_type = _TARGET
+_UPDATESTREAMRESPONSE.fields_by_name['event'].message_type = _STREAMEVENT
+_TRANSACTIONMETADATA.fields_by_name['state'].enum_type = _TRANSACTIONSTATE
+_TRANSACTIONMETADATA.fields_by_name['participants'].message_type = _TARGET
 DESCRIPTOR.message_types_by_name['Target'] = _TARGET
 DESCRIPTOR.message_types_by_name['VTGateCallerID'] = _VTGATECALLERID
+DESCRIPTOR.message_types_by_name['EventToken'] = _EVENTTOKEN
 DESCRIPTOR.message_types_by_name['Value'] = _VALUE
 DESCRIPTOR.message_types_by_name['BindVariable'] = _BINDVARIABLE
 DESCRIPTOR.message_types_by_name['BoundQuery'] = _BOUNDQUERY
+DESCRIPTOR.message_types_by_name['ExecuteOptions'] = _EXECUTEOPTIONS
 DESCRIPTOR.message_types_by_name['Field'] = _FIELD
 DESCRIPTOR.message_types_by_name['Row'] = _ROW
+DESCRIPTOR.message_types_by_name['ResultExtras'] = _RESULTEXTRAS
 DESCRIPTOR.message_types_by_name['QueryResult'] = _QUERYRESULT
+DESCRIPTOR.message_types_by_name['StreamEvent'] = _STREAMEVENT
 DESCRIPTOR.message_types_by_name['ExecuteRequest'] = _EXECUTEREQUEST
 DESCRIPTOR.message_types_by_name['ExecuteResponse'] = _EXECUTERESPONSE
 DESCRIPTOR.message_types_by_name['ExecuteBatchRequest'] = _EXECUTEBATCHREQUEST
@@ -1697,6 +2868,22 @@ DESCRIPTOR.message_types_by_name['CommitRequest'] = _COMMITREQUEST
 DESCRIPTOR.message_types_by_name['CommitResponse'] = _COMMITRESPONSE
 DESCRIPTOR.message_types_by_name['RollbackRequest'] = _ROLLBACKREQUEST
 DESCRIPTOR.message_types_by_name['RollbackResponse'] = _ROLLBACKRESPONSE
+DESCRIPTOR.message_types_by_name['PrepareRequest'] = _PREPAREREQUEST
+DESCRIPTOR.message_types_by_name['PrepareResponse'] = _PREPARERESPONSE
+DESCRIPTOR.message_types_by_name['CommitPreparedRequest'] = _COMMITPREPAREDREQUEST
+DESCRIPTOR.message_types_by_name['CommitPreparedResponse'] = _COMMITPREPAREDRESPONSE
+DESCRIPTOR.message_types_by_name['RollbackPreparedRequest'] = _ROLLBACKPREPAREDREQUEST
+DESCRIPTOR.message_types_by_name['RollbackPreparedResponse'] = _ROLLBACKPREPAREDRESPONSE
+DESCRIPTOR.message_types_by_name['CreateTransactionRequest'] = _CREATETRANSACTIONREQUEST
+DESCRIPTOR.message_types_by_name['CreateTransactionResponse'] = _CREATETRANSACTIONRESPONSE
+DESCRIPTOR.message_types_by_name['StartCommitRequest'] = _STARTCOMMITREQUEST
+DESCRIPTOR.message_types_by_name['StartCommitResponse'] = _STARTCOMMITRESPONSE
+DESCRIPTOR.message_types_by_name['SetRollbackRequest'] = _SETROLLBACKREQUEST
+DESCRIPTOR.message_types_by_name['SetRollbackResponse'] = _SETROLLBACKRESPONSE
+DESCRIPTOR.message_types_by_name['ConcludeTransactionRequest'] = _CONCLUDETRANSACTIONREQUEST
+DESCRIPTOR.message_types_by_name['ConcludeTransactionResponse'] = _CONCLUDETRANSACTIONRESPONSE
+DESCRIPTOR.message_types_by_name['ReadTransactionRequest'] = _READTRANSACTIONREQUEST
+DESCRIPTOR.message_types_by_name['ReadTransactionResponse'] = _READTRANSACTIONRESPONSE
 DESCRIPTOR.message_types_by_name['BeginExecuteRequest'] = _BEGINEXECUTEREQUEST
 DESCRIPTOR.message_types_by_name['BeginExecuteResponse'] = _BEGINEXECUTERESPONSE
 DESCRIPTOR.message_types_by_name['BeginExecuteBatchRequest'] = _BEGINEXECUTEBATCHREQUEST
@@ -1707,8 +2894,12 @@ DESCRIPTOR.message_types_by_name['SplitQueryResponse'] = _SPLITQUERYRESPONSE
 DESCRIPTOR.message_types_by_name['StreamHealthRequest'] = _STREAMHEALTHREQUEST
 DESCRIPTOR.message_types_by_name['RealtimeStats'] = _REALTIMESTATS
 DESCRIPTOR.message_types_by_name['StreamHealthResponse'] = _STREAMHEALTHRESPONSE
+DESCRIPTOR.message_types_by_name['UpdateStreamRequest'] = _UPDATESTREAMREQUEST
+DESCRIPTOR.message_types_by_name['UpdateStreamResponse'] = _UPDATESTREAMRESPONSE
+DESCRIPTOR.message_types_by_name['TransactionMetadata'] = _TRANSACTIONMETADATA
 DESCRIPTOR.enum_types_by_name['Flag'] = _FLAG
 DESCRIPTOR.enum_types_by_name['Type'] = _TYPE
+DESCRIPTOR.enum_types_by_name['TransactionState'] = _TRANSACTIONSTATE
 
 Target = _reflection.GeneratedProtocolMessageType('Target', (_message.Message,), dict(
   DESCRIPTOR = _TARGET,
@@ -1723,6 +2914,13 @@ VTGateCallerID = _reflection.GeneratedProtocolMessageType('VTGateCallerID', (_me
   # @@protoc_insertion_point(class_scope:query.VTGateCallerID)
   ))
 _sym_db.RegisterMessage(VTGateCallerID)
+
+EventToken = _reflection.GeneratedProtocolMessageType('EventToken', (_message.Message,), dict(
+  DESCRIPTOR = _EVENTTOKEN,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.EventToken)
+  ))
+_sym_db.RegisterMessage(EventToken)
 
 Value = _reflection.GeneratedProtocolMessageType('Value', (_message.Message,), dict(
   DESCRIPTOR = _VALUE,
@@ -1753,6 +2951,13 @@ BoundQuery = _reflection.GeneratedProtocolMessageType('BoundQuery', (_message.Me
 _sym_db.RegisterMessage(BoundQuery)
 _sym_db.RegisterMessage(BoundQuery.BindVariablesEntry)
 
+ExecuteOptions = _reflection.GeneratedProtocolMessageType('ExecuteOptions', (_message.Message,), dict(
+  DESCRIPTOR = _EXECUTEOPTIONS,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.ExecuteOptions)
+  ))
+_sym_db.RegisterMessage(ExecuteOptions)
+
 Field = _reflection.GeneratedProtocolMessageType('Field', (_message.Message,), dict(
   DESCRIPTOR = _FIELD,
   __module__ = 'query_pb2'
@@ -1767,12 +2972,34 @@ Row = _reflection.GeneratedProtocolMessageType('Row', (_message.Message,), dict(
   ))
 _sym_db.RegisterMessage(Row)
 
+ResultExtras = _reflection.GeneratedProtocolMessageType('ResultExtras', (_message.Message,), dict(
+  DESCRIPTOR = _RESULTEXTRAS,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.ResultExtras)
+  ))
+_sym_db.RegisterMessage(ResultExtras)
+
 QueryResult = _reflection.GeneratedProtocolMessageType('QueryResult', (_message.Message,), dict(
   DESCRIPTOR = _QUERYRESULT,
   __module__ = 'query_pb2'
   # @@protoc_insertion_point(class_scope:query.QueryResult)
   ))
 _sym_db.RegisterMessage(QueryResult)
+
+StreamEvent = _reflection.GeneratedProtocolMessageType('StreamEvent', (_message.Message,), dict(
+
+  Statement = _reflection.GeneratedProtocolMessageType('Statement', (_message.Message,), dict(
+    DESCRIPTOR = _STREAMEVENT_STATEMENT,
+    __module__ = 'query_pb2'
+    # @@protoc_insertion_point(class_scope:query.StreamEvent.Statement)
+    ))
+  ,
+  DESCRIPTOR = _STREAMEVENT,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.StreamEvent)
+  ))
+_sym_db.RegisterMessage(StreamEvent)
+_sym_db.RegisterMessage(StreamEvent.Statement)
 
 ExecuteRequest = _reflection.GeneratedProtocolMessageType('ExecuteRequest', (_message.Message,), dict(
   DESCRIPTOR = _EXECUTEREQUEST,
@@ -1858,6 +3085,118 @@ RollbackResponse = _reflection.GeneratedProtocolMessageType('RollbackResponse', 
   ))
 _sym_db.RegisterMessage(RollbackResponse)
 
+PrepareRequest = _reflection.GeneratedProtocolMessageType('PrepareRequest', (_message.Message,), dict(
+  DESCRIPTOR = _PREPAREREQUEST,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.PrepareRequest)
+  ))
+_sym_db.RegisterMessage(PrepareRequest)
+
+PrepareResponse = _reflection.GeneratedProtocolMessageType('PrepareResponse', (_message.Message,), dict(
+  DESCRIPTOR = _PREPARERESPONSE,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.PrepareResponse)
+  ))
+_sym_db.RegisterMessage(PrepareResponse)
+
+CommitPreparedRequest = _reflection.GeneratedProtocolMessageType('CommitPreparedRequest', (_message.Message,), dict(
+  DESCRIPTOR = _COMMITPREPAREDREQUEST,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.CommitPreparedRequest)
+  ))
+_sym_db.RegisterMessage(CommitPreparedRequest)
+
+CommitPreparedResponse = _reflection.GeneratedProtocolMessageType('CommitPreparedResponse', (_message.Message,), dict(
+  DESCRIPTOR = _COMMITPREPAREDRESPONSE,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.CommitPreparedResponse)
+  ))
+_sym_db.RegisterMessage(CommitPreparedResponse)
+
+RollbackPreparedRequest = _reflection.GeneratedProtocolMessageType('RollbackPreparedRequest', (_message.Message,), dict(
+  DESCRIPTOR = _ROLLBACKPREPAREDREQUEST,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.RollbackPreparedRequest)
+  ))
+_sym_db.RegisterMessage(RollbackPreparedRequest)
+
+RollbackPreparedResponse = _reflection.GeneratedProtocolMessageType('RollbackPreparedResponse', (_message.Message,), dict(
+  DESCRIPTOR = _ROLLBACKPREPAREDRESPONSE,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.RollbackPreparedResponse)
+  ))
+_sym_db.RegisterMessage(RollbackPreparedResponse)
+
+CreateTransactionRequest = _reflection.GeneratedProtocolMessageType('CreateTransactionRequest', (_message.Message,), dict(
+  DESCRIPTOR = _CREATETRANSACTIONREQUEST,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.CreateTransactionRequest)
+  ))
+_sym_db.RegisterMessage(CreateTransactionRequest)
+
+CreateTransactionResponse = _reflection.GeneratedProtocolMessageType('CreateTransactionResponse', (_message.Message,), dict(
+  DESCRIPTOR = _CREATETRANSACTIONRESPONSE,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.CreateTransactionResponse)
+  ))
+_sym_db.RegisterMessage(CreateTransactionResponse)
+
+StartCommitRequest = _reflection.GeneratedProtocolMessageType('StartCommitRequest', (_message.Message,), dict(
+  DESCRIPTOR = _STARTCOMMITREQUEST,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.StartCommitRequest)
+  ))
+_sym_db.RegisterMessage(StartCommitRequest)
+
+StartCommitResponse = _reflection.GeneratedProtocolMessageType('StartCommitResponse', (_message.Message,), dict(
+  DESCRIPTOR = _STARTCOMMITRESPONSE,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.StartCommitResponse)
+  ))
+_sym_db.RegisterMessage(StartCommitResponse)
+
+SetRollbackRequest = _reflection.GeneratedProtocolMessageType('SetRollbackRequest', (_message.Message,), dict(
+  DESCRIPTOR = _SETROLLBACKREQUEST,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.SetRollbackRequest)
+  ))
+_sym_db.RegisterMessage(SetRollbackRequest)
+
+SetRollbackResponse = _reflection.GeneratedProtocolMessageType('SetRollbackResponse', (_message.Message,), dict(
+  DESCRIPTOR = _SETROLLBACKRESPONSE,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.SetRollbackResponse)
+  ))
+_sym_db.RegisterMessage(SetRollbackResponse)
+
+ConcludeTransactionRequest = _reflection.GeneratedProtocolMessageType('ConcludeTransactionRequest', (_message.Message,), dict(
+  DESCRIPTOR = _CONCLUDETRANSACTIONREQUEST,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.ConcludeTransactionRequest)
+  ))
+_sym_db.RegisterMessage(ConcludeTransactionRequest)
+
+ConcludeTransactionResponse = _reflection.GeneratedProtocolMessageType('ConcludeTransactionResponse', (_message.Message,), dict(
+  DESCRIPTOR = _CONCLUDETRANSACTIONRESPONSE,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.ConcludeTransactionResponse)
+  ))
+_sym_db.RegisterMessage(ConcludeTransactionResponse)
+
+ReadTransactionRequest = _reflection.GeneratedProtocolMessageType('ReadTransactionRequest', (_message.Message,), dict(
+  DESCRIPTOR = _READTRANSACTIONREQUEST,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.ReadTransactionRequest)
+  ))
+_sym_db.RegisterMessage(ReadTransactionRequest)
+
+ReadTransactionResponse = _reflection.GeneratedProtocolMessageType('ReadTransactionResponse', (_message.Message,), dict(
+  DESCRIPTOR = _READTRANSACTIONRESPONSE,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.ReadTransactionResponse)
+  ))
+_sym_db.RegisterMessage(ReadTransactionResponse)
+
 BeginExecuteRequest = _reflection.GeneratedProtocolMessageType('BeginExecuteRequest', (_message.Message,), dict(
   DESCRIPTOR = _BEGINEXECUTEREQUEST,
   __module__ = 'query_pb2'
@@ -1928,13 +3267,35 @@ StreamHealthResponse = _reflection.GeneratedProtocolMessageType('StreamHealthRes
   ))
 _sym_db.RegisterMessage(StreamHealthResponse)
 
+UpdateStreamRequest = _reflection.GeneratedProtocolMessageType('UpdateStreamRequest', (_message.Message,), dict(
+  DESCRIPTOR = _UPDATESTREAMREQUEST,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.UpdateStreamRequest)
+  ))
+_sym_db.RegisterMessage(UpdateStreamRequest)
+
+UpdateStreamResponse = _reflection.GeneratedProtocolMessageType('UpdateStreamResponse', (_message.Message,), dict(
+  DESCRIPTOR = _UPDATESTREAMRESPONSE,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.UpdateStreamResponse)
+  ))
+_sym_db.RegisterMessage(UpdateStreamResponse)
+
+TransactionMetadata = _reflection.GeneratedProtocolMessageType('TransactionMetadata', (_message.Message,), dict(
+  DESCRIPTOR = _TRANSACTIONMETADATA,
+  __module__ = 'query_pb2'
+  # @@protoc_insertion_point(class_scope:query.TransactionMetadata)
+  ))
+_sym_db.RegisterMessage(TransactionMetadata)
+
 
 DESCRIPTOR.has_options = True
 DESCRIPTOR._options = _descriptor._ParseOptions(descriptor_pb2.FileOptions(), _b('\n\030com.youtube.vitess.proto'))
 _BOUNDQUERY_BINDVARIABLESENTRY.has_options = True
 _BOUNDQUERY_BINDVARIABLESENTRY._options = _descriptor._ParseOptions(descriptor_pb2.MessageOptions(), _b('8\001'))
-import abc
+import grpc
 from grpc.beta import implementations as beta_implementations
+from grpc.beta import interfaces as beta_interfaces
 from grpc.framework.common import cardinality
 from grpc.framework.interfaces.face import utilities as face_utilities
 # @@protoc_insertion_point(module_scope)

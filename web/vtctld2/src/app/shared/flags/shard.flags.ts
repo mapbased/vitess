@@ -7,6 +7,7 @@ export class DeleteShardFlags {
     this.flags['shard_ref'] = new ShardRefFlag(0, 'shard_ref', keyspaceName + '/' + shardName);
     this.flags['shard_ref']['positional'] = true;
     this.flags['recursive'] = new RecursiveFlag(1, 'recursive');
+    this.flags['even_if_serving'] = new EvenIfServingFlag(2, 'even_if_serving');
   }
 }
 
@@ -33,12 +34,56 @@ export class NewShardFlags {
   }
 }
 
+export class TabExtRepFlags {
+  flags= {};
+  constructor(tablets) {
+    this.flags['tablet_alias'] = new TabletSelectFlag(0, 'tablet_alias', '', tablets);
+    this.flags['tablet_alias']['positional'] = true;
+  }
+}
+
+export class PlanRepShardFlags {
+  flags= {};
+  constructor(keyspaceName, shardName, tablets) {
+    this.flags['shard_ref'] = new ShardRefFlag(0, 'shard_ref', keyspaceName + '/' + shardName);
+    this.flags['shard_ref']['positional'] = true;
+    this.flags['tablet_alias'] = new TabletSelectFlag(1, 'tablet_alias', '', tablets);
+    this.flags['tablet_alias']['positional'] = true;
+  }
+}
+
+export class EmergencyRepShardFlags {
+  flags= {};
+  constructor(keyspaceName, shardName, tablets) {
+    this.flags['shard_ref'] = new ShardRefFlag(0, 'shard_ref', keyspaceName + '/' + shardName);
+    this.flags['shard_ref']['positional'] = true;
+    this.flags['tablet_alias'] = new TabletSelectFlag(1, 'tablet_alias', '', tablets);
+    this.flags['tablet_alias']['positional'] = true;
+  }
+}
+
+export class ShardReplicationPosFlags {
+  flags= {};
+  constructor(keyspaceName, shardName) {
+    this.flags['shard_ref'] = new ShardRefFlag(0, 'shard_ref', keyspaceName + '/' + shardName);
+    this.flags['shard_ref']['positional'] = true;
+  }
+}
+
+export class ValidateVerShardFlags {
+  flags= {};
+  constructor(keyspaceName, shardName) {
+    this.flags['shard_ref'] = new ShardRefFlag(0, 'shard_ref', keyspaceName + '/' + shardName);
+    this.flags['shard_ref']['positional'] = true;
+  }
+}
+
 export class ValidateShardFlags {
   flags= {};
   constructor(keyspaceName, shardName) {
     this.flags['shard_ref'] = new ShardRefFlag(0, 'shard_ref', keyspaceName + '/' + shardName);
     this.flags['shard_ref']['positional'] = true;
-    this.flags['ping-tablet'] = new PingTabletsFlag(1, 'ping-tablet');
+    this.flags['ping-tablets'] = new PingTabletsFlag(1, 'ping-tablets');
   }
 }
 
@@ -79,6 +124,12 @@ export class RecursiveFlag extends CheckBoxFlag {
   }
 }
 
+export class EvenIfServingFlag extends CheckBoxFlag {
+  constructor(position: number, id: string, value= false) {
+    super(position, id, 'EvenIfServing', 'Delete the shard even if it is serving. Warning: may cause serving interruption.', value);
+  }
+}
+
 export class ShardRefFlag extends InputFlag {
   constructor(position: number, id: string, value= '') {
     super(position, id, '', '', value, false);
@@ -87,10 +138,10 @@ export class ShardRefFlag extends InputFlag {
 
 export class TabletSelectFlag extends DropDownFlag {
   constructor(position: number, id: string, value= '', tablets: any[]) {
-    super(position, id, 'Select a tablet', ' Required. A Tablet Alias to make the master.', value);
+    super(position, id, 'Select a tablet', 'A Tablet Alias to make the master.', value);
     let options = [{label: '', value: ''}];
     tablets.forEach(tablet => {
-      options.push({label: tablet.ref, value: tablet.ref});
+      options.push({label: tablet.label, value: tablet.alias});
     });
     this.setOptions(options);
   }

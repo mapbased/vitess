@@ -21,8 +21,9 @@ import (
 )
 
 var (
-	queryLogHandler = flag.String("query-log-stream-handler", "/debug/querylog", "URL handler for streaming queries log")
-	txLogHandler    = flag.String("transaction-log-stream-handler", "/debug/txlog", "URL handler for streaming transactions log")
+	queryLogHandler        = flag.String("query-log-stream-handler", "/debug/querylog", "URL handler for streaming queries log")
+	txLogHandler           = flag.String("transaction-log-stream-handler", "/debug/txlog", "URL handler for streaming transactions log")
+	watchReplicationStream = flag.Bool("watch_replication_stream", false, "When enabled, vttablet will stream the MySQL replication stream from the local server, and use it to support the include_event_token ExecuteOptions.")
 )
 
 func init() {
@@ -92,14 +93,14 @@ type Config struct {
 // bigger than this).
 var DefaultQsConfig = Config{
 	PoolSize:             16,
-	StreamPoolSize:       750,
+	StreamPoolSize:       200,
 	TransactionCap:       20,
 	TransactionTimeout:   30,
 	MaxResultSize:        10000,
 	MaxDMLRows:           500,
 	QueryCacheSize:       5000,
 	SchemaReloadTime:     30 * 60,
-	QueryTimeout:         0,
+	QueryTimeout:         30,
 	TxPoolTimeout:        1,
 	IdleTimeout:          30 * 60,
 	StreamBufferSize:     32 * 1024,

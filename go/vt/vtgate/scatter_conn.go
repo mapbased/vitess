@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"strings"
 	"sync"
 	"time"
 
@@ -16,10 +15,9 @@ import (
 
 	"github.com/youtube/vitess/go/sqltypes"
 	"github.com/youtube/vitess/go/stats"
+	"github.com/youtube/vitess/go/vt/binlog/eventtoken"
 	"github.com/youtube/vitess/go/vt/concurrency"
-	"github.com/youtube/vitess/go/vt/discovery"
 	"github.com/youtube/vitess/go/vt/tabletserver/querytypes"
-	"github.com/youtube/vitess/go/vt/topo"
 	"github.com/youtube/vitess/go/vt/topo/topoproto"
 	"github.com/youtube/vitess/go/vt/vterrors"
 	"github.com/youtube/vitess/go/vt/vtgate/gateway"
@@ -35,6 +33,7 @@ import (
 type ScatterConn struct {
 	timings              *stats.MultiTimings
 	tabletCallErrorCount *stats.MultiCounters
+	txConn               *TxConn
 	gateway              gateway.Gateway
 }
 
@@ -44,7 +43,7 @@ type ScatterConn struct {
 // return an error if any.  multiGo is capable of executing
 // multiple shardActionFunc actions in parallel and
 // consolidating the results and errors for the caller.
-type shardActionFunc func(shard string) error
+type shardActionFunc func(target *querypb.Target) error
 
 // shardActionTransactionFunc defines the contract for a shard action
 // that may be in a transaction. Every such function executes the
@@ -53,27 +52,24 @@ type shardActionFunc func(shard string) error
 // multiGoTransaction is capable of executing multiple
 // shardActionTransactionFunc actions in parallel and consolidating
 // the results and errors for the caller.
-type shardActionTransactionFunc func(shard string, shouldBegin bool, transactionID int64) (int64, error)
+type shardActionTransactionFunc func(target *querypb.Target, shouldBegin bool, transactionID int64) (int64, error)
 
-// NewScatterConn creates a new ScatterConn. All input parameters are passed through
-// for creating the appropriate connections.
-func NewScatterConn(hc discovery.HealthCheck, topoServer topo.Server, serv topo.SrvTopoServer, statsName, cell string, retryCount int, tabletTypesToWait []topodatapb.TabletType) *ScatterConn {
+// NewScatterConn creates a new ScatterConn.
+func NewScatterConn(statsName string, txConn *TxConn, gw gateway.Gateway) *ScatterConn {
 	tabletCallErrorCountStatsName := ""
 	if statsName != "" {
 		tabletCallErrorCountStatsName = statsName + "ErrorCount"
 	}
-	gw := gateway.GetCreator()(hc, topoServer, serv, cell, retryCount)
-	gateway.WaitForTablets(gw, tabletTypesToWait)
-
 	return &ScatterConn{
 		timings:              stats.NewMultiTimings(statsName, []string{"Operation", "Keyspace", "ShardName", "DbType"}),
 		tabletCallErrorCount: stats.NewMultiCounters(tabletCallErrorCountStatsName, []string{"Operation", "Keyspace", "ShardName", "DbType"}),
+		txConn:               txConn,
 		gateway:              gw,
 	}
 }
 
-func (stc *ScatterConn) startAction(name, keyspace, shard string, tabletType topodatapb.TabletType) (time.Time, []string) {
-	statsKey := []string{name, keyspace, shard, topoproto.TabletTypeLString(tabletType)}
+func (stc *ScatterConn) startAction(name string, target *querypb.Target) (time.Time, []string) {
+	statsKey := []string{name, target.Keyspace, target.Shard, topoproto.TabletTypeLString(target.TabletType)}
 	startTime := time.Now()
 	return startTime, statsKey
 }
@@ -81,31 +77,15 @@ func (stc *ScatterConn) startAction(name, keyspace, shard string, tabletType top
 func (stc *ScatterConn) endAction(startTime time.Time, allErrors *concurrency.AllErrorRecorder, statsKey []string, err *error) {
 	if *err != nil {
 		allErrors.RecordError(*err)
-
 		// Don't increment the error counter for duplicate
-		// keys, as those errors are caused by client queries
-		// and are not VTGate's fault.
-		// TODO(aaijazi): get rid of this string parsing, and
-		// handle all cases of invalid input
-		strErr := (*err).Error()
-		if !strings.Contains(strErr, errDupKey) && !strings.Contains(strErr, errOutOfRange) {
+		// keys or bad queries, as those errors are caused by
+		// client queries and are not VTGate's fault.
+		ec := vterrors.RecoverVtErrorCode(*err)
+		if ec != vtrpcpb.ErrorCode_INTEGRITY_ERROR && ec != vtrpcpb.ErrorCode_BAD_INPUT {
 			stc.tabletCallErrorCount.Add(statsKey, 1)
 		}
 	}
 	stc.timings.Record(statsKey, startTime)
-}
-
-func (stc *ScatterConn) rollbackIfNeeded(ctx context.Context, allErrors *concurrency.AllErrorRecorder, session *SafeSession) {
-	if session.InTransaction() {
-		errstr := allErrors.Error().Error()
-		// We cannot recover from these errors
-		// TODO(aaijazi): get rid of this string parsing. Might
-		// want a function that searches through a deeply
-		// nested error chain for a particular error.
-		if strings.Contains(errstr, "tx_pool_full") || strings.Contains(errstr, "not_in_tx") {
-			stc.Rollback(ctx, session)
-		}
-	}
 }
 
 // Execute executes a non-streaming query on the specified shards.
@@ -118,6 +98,7 @@ func (stc *ScatterConn) Execute(
 	tabletType topodatapb.TabletType,
 	session *SafeSession,
 	notInTransaction bool,
+	options *querypb.ExecuteOptions,
 ) (*sqltypes.Result, error) {
 
 	// mu protects qr
@@ -132,17 +113,17 @@ func (stc *ScatterConn) Execute(
 		tabletType,
 		session,
 		notInTransaction,
-		func(shard string, shouldBegin bool, transactionID int64) (int64, error) {
+		func(target *querypb.Target, shouldBegin bool, transactionID int64) (int64, error) {
 			var innerqr *sqltypes.Result
 			if shouldBegin {
 				var err error
-				innerqr, transactionID, err = stc.gateway.BeginExecute(ctx, keyspace, shard, tabletType, query, bindVars)
+				innerqr, transactionID, err = stc.gateway.BeginExecute(ctx, target, query, bindVars, options)
 				if err != nil {
 					return transactionID, err
 				}
 			} else {
 				var err error
-				innerqr, err = stc.gateway.Execute(ctx, keyspace, shard, tabletType, query, bindVars, transactionID)
+				innerqr, err = stc.gateway.Execute(ctx, target, query, bindVars, transactionID, options)
 				if err != nil {
 					return transactionID, err
 				}
@@ -155,8 +136,9 @@ func (stc *ScatterConn) Execute(
 		})
 
 	if allErrors.HasErrors() {
-		stc.rollbackIfNeeded(ctx, allErrors, session)
-		return nil, allErrors.AggrError(stc.aggregateErrors)
+		err := allErrors.AggrError(stc.aggregateErrors)
+		stc.txConn.RollbackIfNeeded(ctx, err, session)
+		return nil, err
 	}
 	return qr, nil
 }
@@ -172,6 +154,7 @@ func (stc *ScatterConn) ExecuteMulti(
 	tabletType topodatapb.TabletType,
 	session *SafeSession,
 	notInTransaction bool,
+	options *querypb.ExecuteOptions,
 ) (*sqltypes.Result, error) {
 
 	// mu protects qr
@@ -186,17 +169,17 @@ func (stc *ScatterConn) ExecuteMulti(
 		tabletType,
 		session,
 		notInTransaction,
-		func(shard string, shouldBegin bool, transactionID int64) (int64, error) {
+		func(target *querypb.Target, shouldBegin bool, transactionID int64) (int64, error) {
 			var innerqr *sqltypes.Result
 			if shouldBegin {
 				var err error
-				innerqr, transactionID, err = stc.gateway.BeginExecute(ctx, keyspace, shard, tabletType, query, shardVars[shard])
+				innerqr, transactionID, err = stc.gateway.BeginExecute(ctx, target, query, shardVars[target.Shard], options)
 				if err != nil {
 					return transactionID, err
 				}
 			} else {
 				var err error
-				innerqr, err = stc.gateway.Execute(ctx, keyspace, shard, tabletType, query, shardVars[shard], transactionID)
+				innerqr, err = stc.gateway.Execute(ctx, target, query, shardVars[target.Shard], transactionID, options)
 				if err != nil {
 					return transactionID, err
 				}
@@ -209,8 +192,9 @@ func (stc *ScatterConn) ExecuteMulti(
 		})
 
 	if allErrors.HasErrors() {
-		stc.rollbackIfNeeded(ctx, allErrors, session)
-		return nil, allErrors.AggrError(stc.aggregateErrors)
+		err := allErrors.AggrError(stc.aggregateErrors)
+		stc.txConn.RollbackIfNeeded(ctx, err, session)
+		return nil, err
 	}
 	return qr, nil
 }
@@ -225,6 +209,7 @@ func (stc *ScatterConn) ExecuteEntityIds(
 	tabletType topodatapb.TabletType,
 	session *SafeSession,
 	notInTransaction bool,
+	options *querypb.ExecuteOptions,
 ) (*sqltypes.Result, error) {
 
 	// mu protects qr
@@ -239,20 +224,20 @@ func (stc *ScatterConn) ExecuteEntityIds(
 		tabletType,
 		session,
 		notInTransaction,
-		func(shard string, shouldBegin bool, transactionID int64) (int64, error) {
-			sql := sqls[shard]
-			bindVar := bindVars[shard]
+		func(target *querypb.Target, shouldBegin bool, transactionID int64) (int64, error) {
+			sql := sqls[target.Shard]
+			bindVar := bindVars[target.Shard]
 			var innerqr *sqltypes.Result
 
 			if shouldBegin {
 				var err error
-				innerqr, transactionID, err = stc.gateway.BeginExecute(ctx, keyspace, shard, tabletType, sql, bindVar)
+				innerqr, transactionID, err = stc.gateway.BeginExecute(ctx, target, sql, bindVar, options)
 				if err != nil {
 					return transactionID, err
 				}
 			} else {
 				var err error
-				innerqr, err = stc.gateway.Execute(ctx, keyspace, shard, tabletType, sql, bindVar, transactionID)
+				innerqr, err = stc.gateway.Execute(ctx, target, sql, bindVar, transactionID, options)
 				if err != nil {
 					return transactionID, err
 				}
@@ -264,8 +249,9 @@ func (stc *ScatterConn) ExecuteEntityIds(
 			return transactionID, nil
 		})
 	if allErrors.HasErrors() {
-		stc.rollbackIfNeeded(ctx, allErrors, session)
-		return nil, allErrors.AggrError(stc.aggregateErrors)
+		err := allErrors.AggrError(stc.aggregateErrors)
+		stc.txConn.RollbackIfNeeded(ctx, err, session)
+		return nil, err
 	}
 	return qr, nil
 }
@@ -293,7 +279,8 @@ func (stc *ScatterConn) ExecuteBatch(
 	batchRequest *scatterBatchRequest,
 	tabletType topodatapb.TabletType,
 	asTransaction bool,
-	session *SafeSession) (qrs []sqltypes.Result, err error) {
+	session *SafeSession,
+	options *querypb.ExecuteOptions) (qrs []sqltypes.Result, err error) {
 	allErrors := new(concurrency.AllErrorRecorder)
 
 	results := make([]sqltypes.Result, batchRequest.Length)
@@ -304,22 +291,23 @@ func (stc *ScatterConn) ExecuteBatch(
 		wg.Add(1)
 		go func(req *shardBatchRequest) {
 			defer wg.Done()
+			target := &querypb.Target{
+				Keyspace:   req.Keyspace,
+				Shard:      req.Shard,
+				TabletType: tabletType,
+			}
 
 			var err error
-			startTime, statsKey := stc.startAction("ExecuteBatch", req.Keyspace, req.Shard, tabletType)
+			startTime, statsKey := stc.startAction("ExecuteBatch", target)
 			defer stc.endAction(startTime, allErrors, statsKey, &err)
 
-			shouldBegin, transactionID := transactionInfo(req.Keyspace, req.Shard, tabletType, session, false)
+			shouldBegin, transactionID := transactionInfo(target, session, false)
 			var innerqrs []sqltypes.Result
 			if shouldBegin {
-				innerqrs, transactionID, err = stc.gateway.BeginExecuteBatch(ctx, req.Keyspace, req.Shard, tabletType, req.Queries, asTransaction)
+				innerqrs, transactionID, err = stc.gateway.BeginExecuteBatch(ctx, target, req.Queries, asTransaction, options)
 				if transactionID != 0 {
 					session.Append(&vtgatepb.Session_ShardSession{
-						Target: &querypb.Target{
-							Keyspace:   req.Keyspace,
-							Shard:      req.Shard,
-							TabletType: tabletType,
-						},
+						Target:        target,
 						TransactionId: transactionID,
 					})
 				}
@@ -327,7 +315,7 @@ func (stc *ScatterConn) ExecuteBatch(
 					return
 				}
 			} else {
-				innerqrs, err = stc.gateway.ExecuteBatch(ctx, req.Keyspace, req.Shard, tabletType, req.Queries, asTransaction, transactionID)
+				innerqrs, err = stc.gateway.ExecuteBatch(ctx, target, req.Queries, asTransaction, transactionID, options)
 				if err != nil {
 					return
 				}
@@ -344,8 +332,9 @@ func (stc *ScatterConn) ExecuteBatch(
 	// If we want to rollback, we have to do it before closing results
 	// so that the session is updated to be not InTransaction.
 	if allErrors.HasErrors() {
-		stc.rollbackIfNeeded(ctx, allErrors, session)
-		return nil, allErrors.AggrError(stc.aggregateErrors)
+		err := allErrors.AggrError(stc.aggregateErrors)
+		stc.txConn.RollbackIfNeeded(ctx, err, session)
+		return nil, err
 	}
 	return results, nil
 }
@@ -396,6 +385,7 @@ func (stc *ScatterConn) StreamExecute(
 	keyspace string,
 	shards []string,
 	tabletType topodatapb.TabletType,
+	options *querypb.ExecuteOptions,
 	sendReply func(reply *sqltypes.Result) error,
 ) error {
 
@@ -410,8 +400,8 @@ func (stc *ScatterConn) StreamExecute(
 		keyspace,
 		shards,
 		tabletType,
-		func(shard string) error {
-			stream, err := stc.gateway.StreamExecute(ctx, keyspace, shard, tabletType, query, bindVars)
+		func(target *querypb.Target) error {
+			stream, err := stc.gateway.StreamExecute(ctx, target, query, bindVars, options)
 			return stc.processOneStreamingResult(&mu, stream, err, &replyErr, &fieldSent, sendReply)
 		})
 	if replyErr != nil {
@@ -429,6 +419,7 @@ func (stc *ScatterConn) StreamExecuteMulti(
 	keyspace string,
 	shardVars map[string]map[string]interface{},
 	tabletType topodatapb.TabletType,
+	options *querypb.ExecuteOptions,
 	sendReply func(reply *sqltypes.Result) error,
 ) error {
 	// mu protects fieldSent, sendReply and replyErr
@@ -442,8 +433,8 @@ func (stc *ScatterConn) StreamExecuteMulti(
 		keyspace,
 		getShards(shardVars),
 		tabletType,
-		func(shard string) error {
-			stream, err := stc.gateway.StreamExecute(ctx, keyspace, shard, tabletType, query, shardVars[shard])
+		func(target *querypb.Target) error {
+			stream, err := stc.gateway.StreamExecute(ctx, target, query, shardVars[target.Shard], options)
 			return stc.processOneStreamingResult(&mu, stream, err, &replyErr, &fieldSent, sendReply)
 		})
 	if replyErr != nil {
@@ -452,177 +443,31 @@ func (stc *ScatterConn) StreamExecuteMulti(
 	return allErrors.AggrError(stc.aggregateErrors)
 }
 
-// Commit commits the current transaction. There are no retries on this operation.
-func (stc *ScatterConn) Commit(ctx context.Context, session *SafeSession) (err error) {
-	if session == nil {
-		return vterrors.FromError(
-			vtrpcpb.ErrorCode_BAD_INPUT,
-			fmt.Errorf("cannot commit: empty session"),
-		)
+// UpdateStream just sends the query to the gateway,
+// and sends the results back.
+func (stc *ScatterConn) UpdateStream(ctx context.Context, target *querypb.Target, timestamp int64, position string, sendReply func(*querypb.StreamEvent) error) error {
+	ser, err := stc.gateway.UpdateStream(ctx, target, position, timestamp)
+	if err != nil {
+		return err
 	}
-	if !session.InTransaction() {
-		return vterrors.FromError(
-			vtrpcpb.ErrorCode_NOT_IN_TX,
-			fmt.Errorf("cannot commit: not in transaction"),
-		)
-	}
-	committing := true
-	for _, shardSession := range session.ShardSessions {
-		if !committing {
-			stc.gateway.Rollback(ctx, shardSession.Target.Keyspace, shardSession.Target.Shard, shardSession.Target.TabletType, shardSession.TransactionId)
-			continue
-		}
-		if err = stc.gateway.Commit(ctx, shardSession.Target.Keyspace, shardSession.Target.Shard, shardSession.Target.TabletType, shardSession.TransactionId); err != nil {
-			committing = false
-		}
-	}
-	session.Reset()
-	return err
-}
 
-// Rollback rolls back the current transaction. There are no retries on this operation.
-func (stc *ScatterConn) Rollback(ctx context.Context, session *SafeSession) (err error) {
-	if session == nil {
-		return nil
-	}
-	for _, shardSession := range session.ShardSessions {
-		stc.gateway.Rollback(ctx, shardSession.Target.Keyspace, shardSession.Target.Shard, shardSession.Target.TabletType, shardSession.TransactionId)
-	}
-	session.Reset()
-	return nil
-}
-
-// SplitQueryKeyRange scatters a SplitQuery request to all shards. For a set of
-// splits received from a shard, it construct a KeyRange queries by
-// appending that shard's keyrange to the splits. Aggregates all splits across
-// all shards in no specific order and returns.
-func (stc *ScatterConn) SplitQueryKeyRange(ctx context.Context, sql string, bindVariables map[string]interface{}, splitColumn string, splitCount int64, keyRangeByShard map[string]*topodatapb.KeyRange, keyspace string) ([]*vtgatepb.SplitQueryResponse_Part, error) {
-	tabletType := topodatapb.TabletType_RDONLY
-
-	// mu protects allSplits
-	var mu sync.Mutex
-	var allSplits []*vtgatepb.SplitQueryResponse_Part
-
-	actionFunc := func(shard string) error {
-		// Get all splits from this shard
-		queries, err := stc.gateway.SplitQuery(ctx, keyspace, shard, tabletType, sql, bindVariables, splitColumn, splitCount)
+	for {
+		se, err := ser.Recv()
 		if err != nil {
 			return err
 		}
-		// Append the keyrange for this shard to all the splits received,
-		// if keyrange is nil for the shard (e.g. for single-sharded keyspaces during resharding),
-		// append empty keyrange to represent the entire keyspace.
-		keyranges := []*topodatapb.KeyRange{{Start: []byte{}, End: []byte{}}}
-		if keyRangeByShard[shard] != nil {
-			keyranges = []*topodatapb.KeyRange{keyRangeByShard[shard]}
-		}
-		splits := make([]*vtgatepb.SplitQueryResponse_Part, len(queries))
-		for i, query := range queries {
-			q, err := querytypes.BindVariablesToProto3(query.BindVariables)
-			if err != nil {
-				return err
-			}
-			splits[i] = &vtgatepb.SplitQueryResponse_Part{
-				Query: &querypb.BoundQuery{
-					Sql:           query.Sql,
-					BindVariables: q,
-				},
-				KeyRangePart: &vtgatepb.SplitQueryResponse_KeyRangePart{
-					Keyspace:  keyspace,
-					KeyRanges: keyranges,
-				},
-				Size: query.RowCount,
-			}
-		}
-
-		// aggregate splits
-		mu.Lock()
-		defer mu.Unlock()
-		allSplits = append(allSplits, splits...)
-		return nil
-	}
-
-	shards := []string{}
-	for shard := range keyRangeByShard {
-		shards = append(shards, shard)
-	}
-	allErrors := stc.multiGo(ctx, "SplitQuery", keyspace, shards, tabletType, actionFunc)
-	if allErrors.HasErrors() {
-		return nil, allErrors.AggrError(stc.aggregateErrors)
-	}
-	// We shuffle the query-parts here. External frameworks like MapReduce may
-	// "deal" these jobs to workers in the order they are in the list. Without
-	// shuffling workers can be very unevenly distributed among
-	// the shards they query. E.g. all workers will first query the first shard,
-	// then most of them to the second shard, etc, which results with uneven
-	// load balancing among shards.
-	shuffleQueryParts(allSplits)
-	return allSplits, nil
-}
-
-// SplitQueryCustomSharding scatters a SplitQuery request to all
-// shards. For a set of splits received from a shard, it construct a
-// KeyRange queries by appending that shard's name to the
-// splits. Aggregates all splits across all shards in no specific
-// order and returns.
-func (stc *ScatterConn) SplitQueryCustomSharding(ctx context.Context, sql string, bindVariables map[string]interface{}, splitColumn string, splitCount int64, shards []string, keyspace string) ([]*vtgatepb.SplitQueryResponse_Part, error) {
-	tabletType := topodatapb.TabletType_RDONLY
-
-	// mu protects allSplits
-	var mu sync.Mutex
-	var allSplits []*vtgatepb.SplitQueryResponse_Part
-
-	actionFunc := func(shard string) error {
-		// Get all splits from this shard
-		queries, err := stc.gateway.SplitQuery(ctx, keyspace, shard, tabletType, sql, bindVariables, splitColumn, splitCount)
-		if err != nil {
+		if err = sendReply(se); err != nil {
 			return err
 		}
-		// Use the shards list for all the splits received
-		shards := []string{shard}
-		splits := make([]*vtgatepb.SplitQueryResponse_Part, len(queries))
-		for i, query := range queries {
-			q, err := querytypes.BindVariablesToProto3(query.BindVariables)
-			if err != nil {
-				return err
-			}
-			splits[i] = &vtgatepb.SplitQueryResponse_Part{
-				Query: &querypb.BoundQuery{
-					Sql:           query.Sql,
-					BindVariables: q,
-				},
-				ShardPart: &vtgatepb.SplitQueryResponse_ShardPart{
-					Keyspace: keyspace,
-					Shards:   shards,
-				},
-				Size: query.RowCount,
-			}
-		}
-
-		// aggregate splits
-		mu.Lock()
-		defer mu.Unlock()
-		allSplits = append(allSplits, splits...)
-		return nil
 	}
-	allErrors := stc.multiGo(ctx, "SplitQuery", keyspace, shards, tabletType, actionFunc)
-	if allErrors.HasErrors() {
-		return nil, allErrors.AggrError(stc.aggregateErrors)
-	}
-	// See the comment for the analogues line in SplitQueryKeyRange for
-	// the motivation for shuffling.
-	shuffleQueryParts(allSplits)
-	return allSplits, nil
 }
 
-// SplitQueryV2 scatters a SplitQueryV2 request to the shards whose names are given in 'shards'.
+// SplitQuery scatters a SplitQuery request to the shards whose names are given in 'shards'.
 // For every set of querytypes.QuerySplit's received from a shard, it applies the given
 // 'querySplitToPartFunc' function to convert each querytypes.QuerySplit into a
 // 'SplitQueryResponse_Part' message. Finally, it aggregates the obtained
 // SplitQueryResponse_Parts across all shards and returns the resulting slice.
-// TODO(erez): Remove 'scatterConn.SplitQuery' and rename this method to SplitQuery once
-// the migration to SplitQuery V2 is done.
-func (stc *ScatterConn) SplitQueryV2(
+func (stc *ScatterConn) SplitQuery(
 	ctx context.Context,
 	sql string,
 	bindVariables map[string]interface{},
@@ -647,15 +492,16 @@ func (stc *ScatterConn) SplitQueryV2(
 		keyspace,
 		shards,
 		tabletType,
-		func(shard string) error {
+		func(target *querypb.Target) error {
 			// Get all splits from this shard
-			querySplits, err := stc.gateway.SplitQueryV2(
+			query := querytypes.BoundQuery{
+				Sql:           sql,
+				BindVariables: bindVariables,
+			}
+			querySplits, err := stc.gateway.SplitQuery(
 				ctx,
-				keyspace,
-				shard,
-				tabletType,
-				sql,
-				bindVariables,
+				target,
+				query,
 				splitColumns,
 				perShardSplitCount,
 				numRowsPerQueryPart,
@@ -665,7 +511,7 @@ func (stc *ScatterConn) SplitQueryV2(
 			}
 			parts := make([]*vtgatepb.SplitQueryResponse_Part, len(querySplits))
 			for i, querySplit := range querySplits {
-				parts[i], err = querySplitToQueryPartFunc(&querySplit, shard)
+				parts[i], err = querySplitToQueryPartFunc(&querySplit, target.Shard)
 				if err != nil {
 					return err
 				}
@@ -758,9 +604,6 @@ func (e *ScatterConnError) VtErrorCode() vtrpcpb.ErrorCode {
 }
 
 func (stc *ScatterConn) aggregateErrors(errors []error) error {
-	if len(errors) == 0 {
-		return nil
-	}
 	allRetryableError := true
 	for _, e := range errors {
 		connError, ok := e.(*gateway.ShardError)
@@ -795,9 +638,14 @@ func (stc *ScatterConn) multiGo(
 
 	oneShard := func(shard string) {
 		var err error
-		startTime, statsKey := stc.startAction(name, keyspace, shard, tabletType)
+		target := &querypb.Target{
+			Keyspace:   keyspace,
+			Shard:      shard,
+			TabletType: tabletType,
+		}
+		startTime, statsKey := stc.startAction(name, target)
 		defer stc.endAction(startTime, allErrors, statsKey, &err)
-		err = action(shard)
+		err = action(target)
 	}
 
 	if len(shardMap) == 1 {
@@ -844,18 +692,19 @@ func (stc *ScatterConn) multiGoTransaction(
 
 	oneShard := func(shard string) {
 		var err error
-		startTime, statsKey := stc.startAction(name, keyspace, shard, tabletType)
+		target := &querypb.Target{
+			Keyspace:   keyspace,
+			Shard:      shard,
+			TabletType: tabletType,
+		}
+		startTime, statsKey := stc.startAction(name, target)
 		defer stc.endAction(startTime, allErrors, statsKey, &err)
 
-		shouldBegin, transactionID := transactionInfo(keyspace, shard, tabletType, session, notInTransaction)
-		transactionID, err = action(shard, shouldBegin, transactionID)
+		shouldBegin, transactionID := transactionInfo(target, session, notInTransaction)
+		transactionID, err = action(target, shouldBegin, transactionID)
 		if shouldBegin && transactionID != 0 {
 			session.Append(&vtgatepb.Session_ShardSession{
-				Target: &querypb.Target{
-					Keyspace:   keyspace,
-					Shard:      shard,
-					TabletType: tabletType,
-				},
+				Target:        target,
 				TransactionId: transactionID,
 			})
 		}
@@ -885,8 +734,7 @@ func (stc *ScatterConn) multiGoTransaction(
 // - shouldBegin: if we should call 'Begin' to get a transactionID
 // - transactionID: the transactionID to use, or 0 if not in a transaction.
 func transactionInfo(
-	keyspace, shard string,
-	tabletType topodatapb.TabletType,
+	target *querypb.Target,
 	session *SafeSession,
 	notInTransaction bool,
 ) (shouldBegin bool, transactionID int64) {
@@ -895,9 +743,9 @@ func transactionInfo(
 	}
 	// No need to protect ourselves from the race condition between
 	// Find and Append. The higher level functions ensure that no
-	// duplicate (keyspace, shard, tabletType) tuples can execute
+	// duplicate (target) tuples can execute
 	// this at the same time.
-	transactionID = session.Find(keyspace, shard, tabletType)
+	transactionID = session.Find(target.Keyspace, target.Shard, target.TabletType)
 	if transactionID != 0 {
 		return false, transactionID
 	}
@@ -929,6 +777,31 @@ func appendResult(qr, innerqr *sqltypes.Result) {
 	qr.RowsAffected += innerqr.RowsAffected
 	if innerqr.InsertID != 0 {
 		qr.InsertID = innerqr.InsertID
+	}
+	if len(qr.Rows) == 0 {
+		// we haven't gotten any result yet, just save the new extras.
+		qr.Extras = innerqr.Extras
+	} else {
+		// Merge the EventTokens / Fresher flags within Extras.
+		if innerqr.Extras == nil {
+			// We didn't get any from innerq. Have to clear any
+			// we'd have gotten already.
+			if qr.Extras != nil {
+				qr.Extras.EventToken = nil
+				qr.Extras.Fresher = false
+			}
+		} else {
+			// We may have gotten an EventToken from
+			// innerqr.  If we also got one earlier, merge
+			// it. If we didn't get one earlier, we
+			// discard the new one.
+			if qr.Extras != nil {
+				// Note if any of the two is nil, we get nil.
+				qr.Extras.EventToken = eventtoken.Minimum(qr.Extras.EventToken, innerqr.Extras.EventToken)
+
+				qr.Extras.Fresher = qr.Extras.Fresher && innerqr.Extras.Fresher
+			}
+		}
 	}
 	qr.Rows = append(qr.Rows, innerqr.Rows...)
 }

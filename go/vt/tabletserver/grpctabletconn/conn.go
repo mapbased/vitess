@@ -27,11 +27,10 @@ import (
 const protocolName = "grpc"
 
 var (
-	cert  = flag.String("tablet_grpc_cert", "", "the cert to use to connect")
-	key   = flag.String("tablet_grpc_key", "", "the key to use to connect")
-	ca    = flag.String("tablet_grpc_ca", "", "the server ca to use to validate servers when connecting")
-	name  = flag.String("tablet_grpc_server_name", "", "the server name to use to validate server certificate")
-	combo = flag.Bool("tablet_grpc_combine_begin_execute", false, "combines Begin and Execute / ExecuteBatch calls in one when possible")
+	cert = flag.String("tablet_grpc_cert", "", "the cert to use to connect")
+	key  = flag.String("tablet_grpc_key", "", "the key to use to connect")
+	ca   = flag.String("tablet_grpc_ca", "", "the server ca to use to validate servers when connecting")
+	name = flag.String("tablet_grpc_server_name", "", "the server name to use to validate server certificate")
 )
 
 func init() {
@@ -82,7 +81,7 @@ func DialTablet(tablet *topodatapb.Tablet, timeout time.Duration) (tabletconn.Ta
 }
 
 // Execute sends the query to VTTablet.
-func (conn *gRPCQueryClient) Execute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, transactionID int64) (*sqltypes.Result, error) {
+func (conn *gRPCQueryClient) Execute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, transactionID int64, options *querypb.ExecuteOptions) (*sqltypes.Result, error) {
 	conn.mu.RLock()
 	defer conn.mu.RUnlock()
 	if conn.cc == nil {
@@ -100,6 +99,7 @@ func (conn *gRPCQueryClient) Execute(ctx context.Context, target *querypb.Target
 		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
 		Query:             q,
 		TransactionId:     transactionID,
+		Options:           options,
 	}
 	er, err := conn.c.Execute(ctx, req)
 	if err != nil {
@@ -109,7 +109,7 @@ func (conn *gRPCQueryClient) Execute(ctx context.Context, target *querypb.Target
 }
 
 // ExecuteBatch sends a batch query to VTTablet.
-func (conn *gRPCQueryClient) ExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool, transactionID int64) ([]sqltypes.Result, error) {
+func (conn *gRPCQueryClient) ExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool, transactionID int64, options *querypb.ExecuteOptions) ([]sqltypes.Result, error) {
 	conn.mu.RLock()
 	defer conn.mu.RUnlock()
 	if conn.cc == nil {
@@ -123,6 +123,7 @@ func (conn *gRPCQueryClient) ExecuteBatch(ctx context.Context, target *querypb.T
 		Queries:           make([]*querypb.BoundQuery, len(queries)),
 		AsTransaction:     asTransaction,
 		TransactionId:     transactionID,
+		Options:           options,
 	}
 	for i, q := range queries {
 		qq, err := querytypes.BoundQueryToProto3(q.Sql, q.BindVariables)
@@ -159,7 +160,7 @@ func (a *streamExecuteAdapter) Recv() (*sqltypes.Result, error) {
 }
 
 // StreamExecute starts a streaming query to VTTablet.
-func (conn *gRPCQueryClient) StreamExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}) (sqltypes.ResultStream, error) {
+func (conn *gRPCQueryClient) StreamExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, options *querypb.ExecuteOptions) (sqltypes.ResultStream, error) {
 	conn.mu.RLock()
 	defer conn.mu.RUnlock()
 	if conn.cc == nil {
@@ -175,6 +176,7 @@ func (conn *gRPCQueryClient) StreamExecute(ctx context.Context, target *querypb.
 		EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
 		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
 		Query:             q,
+		Options:           options,
 	}
 	stream, err := conn.c.StreamExecute(ctx, req)
 	if err != nil {
@@ -245,8 +247,184 @@ func (conn *gRPCQueryClient) Rollback(ctx context.Context, target *querypb.Targe
 	return nil
 }
 
+// Prepare executes a Prepare on the ongoing transaction.
+func (conn *gRPCQueryClient) Prepare(ctx context.Context, target *querypb.Target, transactionID int64, dtid string) error {
+	conn.mu.RLock()
+	defer conn.mu.RUnlock()
+	if conn.cc == nil {
+		return tabletconn.ConnClosed
+	}
+
+	req := &querypb.PrepareRequest{
+		Target:            target,
+		EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
+		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
+		TransactionId:     transactionID,
+		Dtid:              dtid,
+	}
+	_, err := conn.c.Prepare(ctx, req)
+	if err != nil {
+		return tabletconn.TabletErrorFromGRPC(err)
+	}
+	return nil
+}
+
+// CommitPrepared commits the prepared transaction.
+func (conn *gRPCQueryClient) CommitPrepared(ctx context.Context, target *querypb.Target, dtid string) error {
+	conn.mu.RLock()
+	defer conn.mu.RUnlock()
+	if conn.cc == nil {
+		return tabletconn.ConnClosed
+	}
+
+	req := &querypb.CommitPreparedRequest{
+		Target:            target,
+		EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
+		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
+		Dtid:              dtid,
+	}
+	_, err := conn.c.CommitPrepared(ctx, req)
+	if err != nil {
+		return tabletconn.TabletErrorFromGRPC(err)
+	}
+	return nil
+}
+
+// RollbackPrepared rolls back the prepared transaction.
+func (conn *gRPCQueryClient) RollbackPrepared(ctx context.Context, target *querypb.Target, dtid string, originalID int64) error {
+	conn.mu.RLock()
+	defer conn.mu.RUnlock()
+	if conn.cc == nil {
+		return tabletconn.ConnClosed
+	}
+
+	req := &querypb.RollbackPreparedRequest{
+		Target:            target,
+		EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
+		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
+		TransactionId:     originalID,
+		Dtid:              dtid,
+	}
+	_, err := conn.c.RollbackPrepared(ctx, req)
+	if err != nil {
+		return tabletconn.TabletErrorFromGRPC(err)
+	}
+	return nil
+}
+
+// CreateTransaction creates the metadata for a 2PC transaction.
+func (conn *gRPCQueryClient) CreateTransaction(ctx context.Context, target *querypb.Target, dtid string, participants []*querypb.Target) error {
+	conn.mu.RLock()
+	defer conn.mu.RUnlock()
+	if conn.cc == nil {
+		return tabletconn.ConnClosed
+	}
+
+	req := &querypb.CreateTransactionRequest{
+		Target:            target,
+		EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
+		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
+		Dtid:              dtid,
+		Participants:      participants,
+	}
+	_, err := conn.c.CreateTransaction(ctx, req)
+	if err != nil {
+		return tabletconn.TabletErrorFromGRPC(err)
+	}
+	return nil
+}
+
+// StartCommit atomically commits the transaction along with the
+// decision to commit the associated 2pc transaction.
+func (conn *gRPCQueryClient) StartCommit(ctx context.Context, target *querypb.Target, transactionID int64, dtid string) error {
+	conn.mu.RLock()
+	defer conn.mu.RUnlock()
+	if conn.cc == nil {
+		return tabletconn.ConnClosed
+	}
+
+	req := &querypb.StartCommitRequest{
+		Target:            target,
+		EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
+		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
+		TransactionId:     transactionID,
+		Dtid:              dtid,
+	}
+	_, err := conn.c.StartCommit(ctx, req)
+	if err != nil {
+		return tabletconn.TabletErrorFromGRPC(err)
+	}
+	return nil
+}
+
+// SetRollback transitions the 2pc transaction to the Rollback state.
+// If a transaction id is provided, that transaction is also rolled back.
+func (conn *gRPCQueryClient) SetRollback(ctx context.Context, target *querypb.Target, dtid string, transactionID int64) error {
+	conn.mu.RLock()
+	defer conn.mu.RUnlock()
+	if conn.cc == nil {
+		return tabletconn.ConnClosed
+	}
+
+	req := &querypb.SetRollbackRequest{
+		Target:            target,
+		EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
+		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
+		TransactionId:     transactionID,
+		Dtid:              dtid,
+	}
+	_, err := conn.c.SetRollback(ctx, req)
+	if err != nil {
+		return tabletconn.TabletErrorFromGRPC(err)
+	}
+	return nil
+}
+
+// ConcludeTransaction deletes the 2pc transaction metadata
+// essentially resolving it.
+func (conn *gRPCQueryClient) ConcludeTransaction(ctx context.Context, target *querypb.Target, dtid string) error {
+	conn.mu.RLock()
+	defer conn.mu.RUnlock()
+	if conn.cc == nil {
+		return tabletconn.ConnClosed
+	}
+
+	req := &querypb.ConcludeTransactionRequest{
+		Target:            target,
+		EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
+		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
+		Dtid:              dtid,
+	}
+	_, err := conn.c.ConcludeTransaction(ctx, req)
+	if err != nil {
+		return tabletconn.TabletErrorFromGRPC(err)
+	}
+	return nil
+}
+
+// ReadTransaction returns the metadata for the sepcified dtid.
+func (conn *gRPCQueryClient) ReadTransaction(ctx context.Context, target *querypb.Target, dtid string) (*querypb.TransactionMetadata, error) {
+	conn.mu.RLock()
+	defer conn.mu.RUnlock()
+	if conn.cc == nil {
+		return nil, tabletconn.ConnClosed
+	}
+
+	req := &querypb.ReadTransactionRequest{
+		Target:            target,
+		EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
+		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
+		Dtid:              dtid,
+	}
+	response, err := conn.c.ReadTransaction(ctx, req)
+	if err != nil {
+		return nil, tabletconn.TabletErrorFromGRPC(err)
+	}
+	return response.Metadata, nil
+}
+
 // BeginExecute starts a transaction and runs an Execute.
-func (conn *gRPCQueryClient) BeginExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}) (result *sqltypes.Result, transactionID int64, err error) {
+func (conn *gRPCQueryClient) BeginExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, options *querypb.ExecuteOptions) (result *sqltypes.Result, transactionID int64, err error) {
 	conn.mu.RLock()
 	defer conn.mu.RUnlock()
 	if conn.cc == nil {
@@ -258,159 +436,59 @@ func (conn *gRPCQueryClient) BeginExecute(ctx context.Context, target *querypb.T
 		return nil, 0, err
 	}
 
-	if *combo {
-		// If combo is enabled, we combine both calls
-		req := &querypb.BeginExecuteRequest{
-			Target:            target,
-			EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
-			ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
-			Query:             q,
-		}
-		reply, err := conn.c.BeginExecute(ctx, req)
-		if err != nil {
-			return nil, 0, tabletconn.TabletErrorFromGRPC(err)
-		}
-		if reply.Error != nil {
-			return nil, reply.TransactionId, tabletconn.TabletErrorFromRPCError(reply.Error)
-		}
-		return sqltypes.Proto3ToResult(reply.Result), reply.TransactionId, nil
-	}
-
-	// Begin part.
-	breq := &querypb.BeginRequest{
+	req := &querypb.BeginExecuteRequest{
 		Target:            target,
 		EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
 		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
+		Query:             q,
+		Options:           options,
 	}
-	br, err := conn.c.Begin(ctx, breq)
+	reply, err := conn.c.BeginExecute(ctx, req)
 	if err != nil {
 		return nil, 0, tabletconn.TabletErrorFromGRPC(err)
 	}
-	transactionID = br.TransactionId
-
-	// Execute part.
-	ereq := &querypb.ExecuteRequest{
-		Target:            target,
-		EffectiveCallerId: breq.EffectiveCallerId,
-		ImmediateCallerId: breq.ImmediateCallerId,
-		Query:             q,
-		TransactionId:     transactionID,
+	if reply.Error != nil {
+		return nil, reply.TransactionId, tabletconn.TabletErrorFromRPCError(reply.Error)
 	}
-	er, err := conn.c.Execute(ctx, ereq)
-	if err != nil {
-		return nil, transactionID, tabletconn.TabletErrorFromGRPC(err)
-	}
-	return sqltypes.Proto3ToResult(er.Result), transactionID, nil
-
+	return sqltypes.Proto3ToResult(reply.Result), reply.TransactionId, nil
 }
 
 // BeginExecuteBatch starts a transaction and runs an ExecuteBatch.
-func (conn *gRPCQueryClient) BeginExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool) (results []sqltypes.Result, transactionID int64, err error) {
+func (conn *gRPCQueryClient) BeginExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool, options *querypb.ExecuteOptions) (results []sqltypes.Result, transactionID int64, err error) {
 	conn.mu.RLock()
 	defer conn.mu.RUnlock()
 	if conn.cc == nil {
 		return nil, 0, tabletconn.ConnClosed
 	}
 
-	if *combo {
-		// If combo is enabled, we combine both calls
-		req := &querypb.BeginExecuteBatchRequest{
-			Target:            target,
-			EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
-			ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
-			Queries:           make([]*querypb.BoundQuery, len(queries)),
-			AsTransaction:     asTransaction,
-		}
-		for i, q := range queries {
-			qq, err := querytypes.BoundQueryToProto3(q.Sql, q.BindVariables)
-			if err != nil {
-				return nil, transactionID, err
-			}
-			req.Queries[i] = qq
-		}
-
-		reply, err := conn.c.BeginExecuteBatch(ctx, req)
-		if err != nil {
-			return nil, 0, tabletconn.TabletErrorFromGRPC(err)
-		}
-		if reply.Error != nil {
-			return nil, reply.TransactionId, tabletconn.TabletErrorFromRPCError(reply.Error)
-		}
-		return sqltypes.Proto3ToResults(reply.Results), reply.TransactionId, nil
-	}
-
-	breq := &querypb.BeginRequest{
+	req := &querypb.BeginExecuteBatchRequest{
 		Target:            target,
 		EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
 		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
-	}
-	br, err := conn.c.Begin(ctx, breq)
-	if err != nil {
-		return nil, 0, tabletconn.TabletErrorFromGRPC(err)
-	}
-	transactionID = br.TransactionId
-
-	ereq := &querypb.ExecuteBatchRequest{
-		Target:            target,
-		EffectiveCallerId: breq.EffectiveCallerId,
-		ImmediateCallerId: breq.ImmediateCallerId,
 		Queries:           make([]*querypb.BoundQuery, len(queries)),
 		AsTransaction:     asTransaction,
-		TransactionId:     transactionID,
+		Options:           options,
 	}
 	for i, q := range queries {
 		qq, err := querytypes.BoundQueryToProto3(q.Sql, q.BindVariables)
 		if err != nil {
 			return nil, transactionID, err
 		}
-		ereq.Queries[i] = qq
+		req.Queries[i] = qq
 	}
-	ebr, err := conn.c.ExecuteBatch(ctx, ereq)
+
+	reply, err := conn.c.BeginExecuteBatch(ctx, req)
 	if err != nil {
-		return nil, transactionID, tabletconn.TabletErrorFromGRPC(err)
+		return nil, 0, tabletconn.TabletErrorFromGRPC(err)
 	}
-	return sqltypes.Proto3ToResults(ebr.Results), transactionID, nil
+	if reply.Error != nil {
+		return nil, reply.TransactionId, tabletconn.TabletErrorFromRPCError(reply.Error)
+	}
+	return sqltypes.Proto3ToResults(reply.Results), reply.TransactionId, nil
 }
 
 // SplitQuery is the stub for TabletServer.SplitQuery RPC
-// TODO(erez): Remove this method and rename SplitQueryV2 to SplitQuery once
-// the migration to SplitQuery V2 is done.
-func (conn *gRPCQueryClient) SplitQuery(ctx context.Context, target *querypb.Target, query querytypes.BoundQuery, splitColumn string, splitCount int64) (queries []querytypes.QuerySplit, err error) {
-	conn.mu.RLock()
-	defer conn.mu.RUnlock()
-	if conn.cc == nil {
-		err = tabletconn.ConnClosed
-		return
-	}
-
-	q, err := querytypes.BoundQueryToProto3(query.Sql, query.BindVariables)
-	if err != nil {
-		return nil, tabletconn.TabletErrorFromGRPC(err)
-	}
-	req := &querypb.SplitQueryRequest{
-		Target:              target,
-		EffectiveCallerId:   callerid.EffectiveCallerIDFromContext(ctx),
-		ImmediateCallerId:   callerid.ImmediateCallerIDFromContext(ctx),
-		Query:               q,
-		SplitColumn:         []string{splitColumn},
-		SplitCount:          splitCount,
-		NumRowsPerQueryPart: 0,
-		Algorithm:           querypb.SplitQueryRequest_EQUAL_SPLITS,
-		UseSplitQueryV2:     false,
-	}
-	sqr, err := conn.c.SplitQuery(ctx, req)
-	if err != nil {
-		return nil, tabletconn.TabletErrorFromGRPC(err)
-	}
-	split, err := querytypes.Proto3ToQuerySplits(sqr.Queries)
-	if err != nil {
-		return nil, tabletconn.TabletErrorFromGRPC(err)
-	}
-	return split, nil
-}
-
-// SplitQueryV2 is the stub for TabletServer.SplitQuery RPC
-func (conn *gRPCQueryClient) SplitQueryV2(
+func (conn *gRPCQueryClient) SplitQuery(
 	ctx context.Context,
 	target *querypb.Target,
 	query querytypes.BoundQuery,
@@ -439,7 +517,6 @@ func (conn *gRPCQueryClient) SplitQueryV2(
 		SplitCount:          splitCount,
 		NumRowsPerQueryPart: numRowsPerQueryPart,
 		Algorithm:           algorithm,
-		UseSplitQueryV2:     true,
 	}
 	sqr, err := conn.c.SplitQuery(ctx, req)
 	if err != nil {
@@ -463,17 +540,55 @@ func (conn *gRPCQueryClient) StreamHealth(ctx context.Context) (tabletconn.Strea
 	return conn.c.StreamHealth(ctx, &querypb.StreamHealthRequest{})
 }
 
+type updateStreamAdapter struct {
+	stream queryservicepb.Query_UpdateStreamClient
+}
+
+func (a *updateStreamAdapter) Recv() (*querypb.StreamEvent, error) {
+	r, err := a.stream.Recv()
+	switch err {
+	case nil:
+		return r.Event, nil
+	case io.EOF:
+		return nil, err
+	default:
+		return nil, tabletconn.TabletErrorFromGRPC(err)
+	}
+}
+
+// UpdateStream starts a streaming query to VTTablet.
+func (conn *gRPCQueryClient) UpdateStream(ctx context.Context, target *querypb.Target, position string, timestamp int64) (tabletconn.StreamEventReader, error) {
+	conn.mu.RLock()
+	defer conn.mu.RUnlock()
+	if conn.cc == nil {
+		return nil, tabletconn.ConnClosed
+	}
+
+	req := &querypb.UpdateStreamRequest{
+		Target:            target,
+		EffectiveCallerId: callerid.EffectiveCallerIDFromContext(ctx),
+		ImmediateCallerId: callerid.ImmediateCallerIDFromContext(ctx),
+		Position:          position,
+		Timestamp:         timestamp,
+	}
+	stream, err := conn.c.UpdateStream(ctx, req)
+	if err != nil {
+		return nil, tabletconn.TabletErrorFromGRPC(err)
+	}
+	return &updateStreamAdapter{stream: stream}, err
+}
+
 // Close closes underlying gRPC channel.
-func (conn *gRPCQueryClient) Close() {
+func (conn *gRPCQueryClient) Close(ctx context.Context) error {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 	if conn.cc == nil {
-		return
+		return nil
 	}
 
 	cc := conn.cc
 	conn.cc = nil
-	cc.Close()
+	return cc.Close()
 }
 
 // Tablet returns the rpc end point.

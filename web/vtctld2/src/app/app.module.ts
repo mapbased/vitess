@@ -14,7 +14,7 @@ import { MdRippleModule } from '@angular2-material/core/ripple/ripple';
 import { MdSidenavModule } from '@angular2-material/sidenav/sidenav';
 import { MdToolbarModule } from '@angular2-material/toolbar/toolbar';
 
-import { DataTableModule, DialogModule, DropdownModule, SharedModule } from 'primeng/primeng';
+import { AccordionModule, DataTableModule, DialogModule, DropdownModule, MenuModule, SharedModule } from 'primeng/primeng';
 
 import { AddButtonComponent } from './shared/add-button.component';
 import { APP_ROUTER_PROVIDERS, routing } from './app.routes';
@@ -30,14 +30,15 @@ import { StatusComponent } from './status/status.component';
 import { TopoBrowserComponent } from './topo/topo-browser.component';
 import { TabletComponent } from './dashboard/tablet.component';
 import { TabletPopupComponent } from './status/tablet-popup.component';
-import { TasksComponent } from './tasks/tasks.component';
+import { WorkflowListComponent } from './workflows/workflow-list.component';
 
+import { FeaturesService } from './api/features.service';
 import { KeyspaceService } from './api/keyspace.service';
 import { ShardService } from './api/shard.service';
 import { TabletService } from './api/tablet.service';
 import { TabletStatusService } from './api/tablet-status.service';
 import { TopoDataService } from './api/topo-data.service';
-import { TopologyInfoService } from './api/topology-info.service.ts';
+import { TopologyInfoService } from './api/topology-info.service';
 import { VtctlService } from './api/vtctl.service';
 
 @NgModule({
@@ -58,8 +59,10 @@ import { VtctlService } from './api/vtctl.service';
     MdRippleModule,
     MdSidenavModule,
     MdToolbarModule,
+    MenuModule,
     routing,
     SharedModule,
+    AccordionModule,
   ],
   declarations: [
     AddButtonComponent,
@@ -75,10 +78,11 @@ import { VtctlService } from './api/vtctl.service';
     TopoBrowserComponent,
     TabletComponent,
     TabletPopupComponent,
-    TasksComponent,
+    WorkflowListComponent,
   ],
   providers: [
     APP_ROUTER_PROVIDERS,
+    FeaturesService,
     KeyspaceService,
     ShardService,
     TabletService,

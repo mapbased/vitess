@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	finalizeReparentTimeout = flag.Duration("finalize_external_reparent_timeout", 10*time.Second, "Timeout for the finalize stage of a fast external reparent reconciliation.")
+	finalizeReparentTimeout = flag.Duration("finalize_external_reparent_timeout", 30*time.Second, "Timeout for the finalize stage of a fast external reparent reconciliation.")
 
 	externalReparentStats = stats.NewTimings("ExternalReparents", "NewMasterVisible", "FullRebuild")
 )
@@ -99,13 +99,12 @@ func (agent *ActionAgent) TabletExternallyReparented(ctx context.Context, extern
 	// Execute state change to master by force-updating only the local copy of the
 	// tablet record. The actual record in topo will be updated later.
 	log.Infof("fastTabletExternallyReparented: executing change callback for state change to MASTER")
-	oldTablet := proto.Clone(tablet).(*topodatapb.Tablet)
-	tablet.Type = topodatapb.TabletType_MASTER
-	agent.setTablet(tablet)
+	newTablet := proto.Clone(tablet).(*topodatapb.Tablet)
+	newTablet.Type = topodatapb.TabletType_MASTER
 
 	// This is where updateState will block for gracePeriod, while it gives
 	// vtgate a chance to stop sending replica queries.
-	agent.updateState(ctx, oldTablet, "fastTabletExternallyReparented")
+	agent.updateState(ctx, newTablet, "fastTabletExternallyReparented")
 
 	// Start the finalize stage with a background context, but connect the trace.
 	bgCtx, cancel := context.WithTimeout(agent.batchCtx, *finalizeReparentTimeout)
@@ -174,7 +173,9 @@ func (agent *ActionAgent) finalizeTabletExternallyReparented(ctx context.Context
 			// Tell the old master to re-read its tablet record and change its state.
 			// We don't need to wait for it.
 			tmc := tmclient.NewTabletManagerClient()
-			tmc.RefreshState(ctx, oldMasterTablet)
+			if err := tmc.RefreshState(ctx, oldMasterTablet); err != nil {
+				log.Warningf("Error calling RefreshState on old master %v: %v", topoproto.TabletAliasString(oldMasterTablet.Alias), err)
+			}
 		}()
 	}
 

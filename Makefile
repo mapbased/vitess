@@ -10,7 +10,7 @@ MAKEFLAGS = -s
 
 .PHONY: all build build_web test clean unit_test unit_test_cover unit_test_race integration_test proto proto_banner site_test site_integration_test docker_bootstrap docker_test docker_unit_test java_test php_test reshard_tests
 
-all: build build_web test
+all: build test
 
 # Set a custom value for -p, the number of packages to be built/tested in parallel.
 # This is currently only used by our Travis CI test configuration.
@@ -153,14 +153,21 @@ php_proto:
 DOCKER_IMAGES_FOR_TEST = mariadb mysql56 mysql57 percona percona57
 DOCKER_IMAGES = common $(DOCKER_IMAGES_FOR_TEST)
 docker_bootstrap:
-	for i in $(DOCKER_IMAGES); do echo "image: $$i"; docker/bootstrap/build.sh $$i || exit 1; done
+	for i in $(DOCKER_IMAGES); do echo "building bootstrap image: $$i"; docker/bootstrap/build.sh $$i || exit 1; done
 
 docker_bootstrap_test:
 	flavors='$(DOCKER_IMAGES_FOR_TEST)' && ./test.go -pull=false -parallel=4 -flavor=$${flavors// /,}
 
 docker_bootstrap_push:
-	for i in $(DOCKER_IMAGES); do echo "image: $$i"; docker push vitess/bootstrap:$$i || exit 1; done
+	for i in $(DOCKER_IMAGES); do echo "pushing boostrap image: $$i"; docker push vitess/bootstrap:$$i || exit 1; done
 
+# Use this target to update the local copy of your images with the one on Dockerhub.
+docker_bootstrap_pull:
+	for i in $(DOCKER_IMAGES); do echo "pulling bootstrap image: $$i"; docker pull vitess/bootstrap:$$i || exit 1; done
+
+# Note: The default base and lite images (tag "latest") use MySQL 5.7.
+# Images with other MySQL/MariaDB versions get their own tag e.g. "mariadb".
+# We never push the non-"latest" tags though and only provide them for convenience for users who want to run something else than MySQL 5.7.
 docker_base:
 	# Fix permissions before copying files, to avoid AUFS bug.
 	chmod -R o=g *
@@ -170,6 +177,10 @@ docker_base_mysql56:
 	chmod -R o=g *
 	docker build -f Dockerfile.percona -t vitess/base:mysql56 .
 
+docker_base_mariadb:
+	chmod -R o=g *
+	docker build -f Dockerfile.mariadb -t vitess/base:mariadb .
+
 docker_base_percona:
 	chmod -R o=g *
 	docker build -f Dockerfile.percona -t vitess/base:percona .
@@ -177,10 +188,6 @@ docker_base_percona:
 docker_base_percona57:
 	chmod -R o=g *
 	docker build -f Dockerfile.percona57 -t vitess/base:percona57 .
-
-docker_base_mariadb:
-	chmod -R o=g *
-	docker build -f Dockerfile.mariadb -t vitess/base:mariadb .
 
 docker_lite: docker_base
 	cd docker/lite && ./build.sh

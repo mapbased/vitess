@@ -205,7 +205,11 @@ func (ts Server) FindAllShardsInKeyspace(ctx context.Context, keyspace string) (
 			defer wg.Done()
 			si, err := ts.GetShard(ctx, keyspace, shard)
 			if err != nil {
-				rec.RecordError(fmt.Errorf("GetShard(%v,%v) failed: %v", keyspace, shard, err))
+				if err == ErrNoNode {
+					log.Warningf("GetShard(%v,%v) returned ErrNoNode, consider checking the topology.", keyspace, shard)
+				} else {
+					rec.RecordError(fmt.Errorf("GetShard(%v,%v) failed: %v", keyspace, shard, err))
+				}
 				return
 			}
 			mu.Lock()
@@ -218,20 +222,6 @@ func (ts Server) FindAllShardsInKeyspace(ctx context.Context, keyspace string) (
 		return nil, rec.Error()
 	}
 	return result, nil
-}
-
-// DeleteKeyspaceShards wraps the underlying Impl.DeleteKeyspaceShards
-// and dispatches the event.
-func (ts Server) DeleteKeyspaceShards(ctx context.Context, keyspace string) error {
-	if err := ts.Impl.DeleteKeyspaceShards(ctx, keyspace); err != nil {
-		return err
-	}
-	event.Dispatch(&events.KeyspaceChange{
-		KeyspaceName: keyspace,
-		Keyspace:     nil,
-		Status:       "deleted all shards",
-	})
-	return nil
 }
 
 // DeleteKeyspace wraps the underlying Impl.DeleteKeyspace

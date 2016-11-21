@@ -39,9 +39,9 @@ func (agent *ActionAgent) RestoreData(ctx context.Context, logger logutil.Logger
 func (agent *ActionAgent) restoreDataLocked(ctx context.Context, logger logutil.Logger, deleteBeforeRestore bool) error {
 	// change type to RESTORE (using UpdateTabletFields so it's
 	// always authorized)
-	tablet := agent.Tablet()
-	originalType := tablet.Type
-	if _, err := agent.TopoServer.UpdateTabletFields(ctx, tablet.Alias, func(tablet *topodatapb.Tablet) error {
+	var originalType topodatapb.TabletType
+	if _, err := agent.TopoServer.UpdateTabletFields(ctx, agent.TabletAlias, func(tablet *topodatapb.Tablet) error {
+		originalType = tablet.Type
 		tablet.Type = topodatapb.TabletType_RESTORE
 		return nil
 	}); err != nil {
@@ -56,22 +56,24 @@ func (agent *ActionAgent) restoreDataLocked(ctx context.Context, logger logutil.
 	// Try to restore. Depending on the reason for failure, we may be ok.
 	// If we're not ok, return an error and the agent will log.Fatalf,
 	// causing the process to be restarted and the restore retried.
+	// Record local metadata values based on the original type.
+	localMetadata := agent.getLocalMetadataValues(originalType)
+	tablet := agent.Tablet()
 	dir := fmt.Sprintf("%v/%v", tablet.Keyspace, tablet.Shard)
-	localMetadata, err := agent.getLocalMetadataValues()
-	if err != nil {
-		return err
-	}
-	pos, err := mysqlctl.Restore(ctx, agent.MysqlDaemon, dir, *restoreConcurrency, agent.hookExtraEnv(), localMetadata, logger, deleteBeforeRestore)
+	pos, err := mysqlctl.Restore(ctx, agent.MysqlDaemon, dir, *restoreConcurrency, agent.hookExtraEnv(), localMetadata, logger, deleteBeforeRestore, topoproto.TabletDbName(tablet))
 	switch err {
 	case nil:
 		// Reconnect to master.
-		if err := agent.startReplication(ctx, pos); err != nil {
+		if err := agent.startReplication(ctx, pos, originalType); err != nil {
 			return err
 		}
 	case mysqlctl.ErrNoBackup:
 		// No-op, starting with empty database.
 	case mysqlctl.ErrExistingDB:
-		// No-op, assuming we've just restarted.
+		// No-op, assuming we've just restarted.  Note the
+		// replication reporter may restart replication at the
+		// next health check if it thinks it should. We do not
+		// alter replication here.
 	default:
 		return fmt.Errorf("Can't restore backup: %v", err)
 	}
@@ -92,7 +94,7 @@ func (agent *ActionAgent) restoreDataLocked(ctx context.Context, logger logutil.
 	return nil
 }
 
-func (agent *ActionAgent) startReplication(ctx context.Context, pos replication.Position) error {
+func (agent *ActionAgent) startReplication(ctx context.Context, pos replication.Position, tabletType topodatapb.TabletType) error {
 	// Set the position at which to resume from the master.
 	cmds, err := agent.MysqlDaemon.SetSlavePositionCommands(pos)
 	if err != nil {
@@ -130,10 +132,8 @@ func (agent *ActionAgent) startReplication(ctx context.Context, pos replication.
 	}
 
 	// If using semi-sync, we need to enable it before connecting to master.
-	if *enableSemiSync {
-		if err := agent.enableSemiSync(false); err != nil {
-			return err
-		}
+	if err := agent.fixSemiSync(tabletType); err != nil {
+		return err
 	}
 
 	// Set master and start slave.
@@ -149,20 +149,16 @@ func (agent *ActionAgent) startReplication(ctx context.Context, pos replication.
 	return nil
 }
 
-func (agent *ActionAgent) getLocalMetadataValues() (map[string]string, error) {
+func (agent *ActionAgent) getLocalMetadataValues(tabletType topodatapb.TabletType) map[string]string {
 	tablet := agent.Tablet()
 	values := map[string]string{
 		"Alias":         topoproto.TabletAliasString(tablet.Alias),
 		"ClusterAlias":  fmt.Sprintf("%s.%s", tablet.Keyspace, tablet.Shard),
 		"DataCenter":    tablet.Alias.Cell,
-		"PromotionRule": "neutral",
+		"PromotionRule": "must_not",
 	}
-	masterEligible, err := agent.isMasterEligible()
-	if err != nil {
-		return nil, fmt.Errorf("can't determine PromotionRule while populating local_metadata: %v", err)
+	if isMasterEligible(tabletType) {
+		values["PromotionRule"] = "neutral"
 	}
-	if !masterEligible {
-		values["PromotionRule"] = "must_not"
-	}
-	return values, nil
+	return values
 }

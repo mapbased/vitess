@@ -25,6 +25,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"math/rand"
 	"net"
 	"os"
 	"path"
@@ -32,9 +33,9 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/golang/glog"
 	"golang.org/x/net/context"
 
-	log "github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
 	"github.com/youtube/vitess/go/history"
 	"github.com/youtube/vitess/go/netutil"
@@ -48,7 +49,6 @@ import (
 	"github.com/youtube/vitess/go/vt/mysqlctl"
 	"github.com/youtube/vitess/go/vt/servenv"
 	"github.com/youtube/vitess/go/vt/tabletserver"
-	"github.com/youtube/vitess/go/vt/tabletserver/planbuilder"
 	"github.com/youtube/vitess/go/vt/tabletserver/tabletservermock"
 	"github.com/youtube/vitess/go/vt/topo"
 	"github.com/youtube/vitess/go/vt/topo/topoproto"
@@ -58,10 +58,6 @@ import (
 )
 
 const (
-	// keyrangeQueryRules is the QueryRuleSource name for rules that are based
-	// on the key range.
-	keyrangeQueryRules = "KeyrangeQueryRules"
-
 	// slaveStoppedFile is the file name for the file whose existence informs
 	// vttablet to NOT try to repair replication.
 	slaveStoppedFile = "do_not_replicate"
@@ -267,6 +263,11 @@ func NewActionAgent(
 			agent.initHealthCheck()
 		}()
 	} else {
+		// update our state
+		if err := agent.refreshTablet(batchCtx, "Start"); err != nil {
+			return nil, err
+		}
+
 		// synchronously start health check if needed
 		agent.initHealthCheck()
 	}
@@ -298,9 +299,17 @@ func NewTestActionAgent(batchCtx context.Context, ts topo.Server, tabletAlias *t
 	if preStart != nil {
 		preStart(agent)
 	}
+
+	// Start will update the topology and setup services.
 	if err := agent.Start(batchCtx, 0, vtPort, grpcPort, false); err != nil {
 		panic(fmt.Errorf("agent.Start(%v) failed: %v", tabletAlias, err))
 	}
+
+	// Update our running state.
+	if err := agent.refreshTablet(batchCtx, "Start"); err != nil {
+		panic(fmt.Errorf("agent.refreshTablet(%v) failed: %v", tabletAlias, err))
+	}
+
 	return agent
 }
 
@@ -324,7 +333,7 @@ func NewComboActionAgent(batchCtx context.Context, ts topo.Server, tabletAlias *
 	}
 	agent.registerQueryRuleSources()
 
-	// initialize the tablet
+	// Initialize the tablet.
 	*initDbNameOverride = dbname
 	*initKeyspace = keyspace
 	*initShard = shard
@@ -333,27 +342,22 @@ func NewComboActionAgent(batchCtx context.Context, ts topo.Server, tabletAlias *
 		panic(fmt.Errorf("agent.InitTablet failed: %v", err))
 	}
 
-	// and start the agent
+	// Start the agent.
 	if err := agent.Start(batchCtx, 0, vtPort, grpcPort, false); err != nil {
 		panic(fmt.Errorf("agent.Start(%v) failed: %v", tabletAlias, err))
 	}
+
+	// And update our running state.
+	if err := agent.refreshTablet(batchCtx, "Start"); err != nil {
+		panic(fmt.Errorf("agent.refreshTablet(%v) failed: %v", tabletAlias, err))
+	}
+
 	return agent
 }
 
 // registerQueryRuleSources registers query rule sources under control of agent
 func (agent *ActionAgent) registerQueryRuleSources() {
 	agent.QueryServiceControl.RegisterQueryRuleSource(blacklistQueryRules)
-}
-
-// updateTabletFromTopo will read the tablet record from the topology,
-// save it in the agent's tablet record, and return it.
-func (agent *ActionAgent) updateTabletFromTopo(ctx context.Context) (*topodatapb.Tablet, error) {
-	ti, err := agent.TopoServer.GetTablet(ctx, agent.TabletAlias)
-	if err != nil {
-		return nil, err
-	}
-	agent.setTablet(ti.Tablet)
-	return ti.Tablet, nil
 }
 
 func (agent *ActionAgent) setTablet(tablet *topodatapb.Tablet) {
@@ -465,32 +469,21 @@ func (agent *ActionAgent) setBlacklistedTables(value []string) {
 	agent.mutex.Unlock()
 }
 
-func (agent *ActionAgent) verifyTopology(ctx context.Context) error {
-	tablet := agent.Tablet()
-	if tablet == nil {
-		return fmt.Errorf("agent._tablet is nil")
-	}
-
+func (agent *ActionAgent) verifyTopology(ctx context.Context) {
 	if err := topo.Validate(ctx, agent.TopoServer, agent.TabletAlias); err != nil {
 		// Don't stop, it's not serious enough, this is likely transient.
 		log.Warningf("tablet validate failed: %v %v", agent.TabletAlias, err)
 	}
-
-	return nil
 }
 
 // Start validates and updates the topology records for the tablet, and performs
 // the initial state change callback to start tablet services.
 // If initUpdateStream is set, update stream service will also be registered.
 func (agent *ActionAgent) Start(ctx context.Context, mysqlPort, vtPort, gRPCPort int32, initUpdateStream bool) error {
-	var err error
-	if _, err = agent.updateTabletFromTopo(ctx); err != nil {
-		return err
-	}
-
 	// find our hostname as fully qualified, and IP
 	hostname := *tabletHostname
 	if hostname == "" {
+		var err error
 		hostname, err = netutil.FullyQualifiedHostname()
 		if err != nil {
 			return err
@@ -525,37 +518,29 @@ func (agent *ActionAgent) Start(ctx context.Context, mysqlPort, vtPort, gRPCPort
 		} else {
 			delete(tablet.PortMap, "grpc")
 		}
+
+		// Save the original tablet for ownership tests later.
+		agent.initialTablet = tablet
 		return nil
 	}
-	if _, err := agent.TopoServer.UpdateTabletFields(ctx, agent.Tablet().Alias, f); err != nil {
+	if _, err := agent.TopoServer.UpdateTabletFields(ctx, agent.TabletAlias, f); err != nil {
 		return err
 	}
 
-	// Reread to get the changes we just made
-	tablet, err := agent.updateTabletFromTopo(ctx)
-	if err != nil {
-		return err
-	}
+	// Verify the topology is correct.
+	agent.verifyTopology(ctx)
 
-	// Save the original tablet record as it is now (at startup).
-	agent.initialTablet = proto.Clone(tablet).(*topodatapb.Tablet)
-
-	if err = agent.verifyTopology(ctx); err != nil {
-		return err
-	}
-
-	// get and fix the dbname if necessary
+	// Get and fix the dbname if necessary, only for real instances.
 	if !agent.DBConfigs.IsZero() {
-		// Only for real instances
+		dbname := topoproto.TabletDbName(agent.initialTablet)
+
 		// Update our DB config to match the info we have in the tablet
 		if agent.DBConfigs.App.DbName == "" {
-			agent.DBConfigs.App.DbName = topoproto.TabletDbName(tablet)
+			agent.DBConfigs.App.DbName = dbname
 		}
 		if agent.DBConfigs.Filtered.DbName == "" {
-			agent.DBConfigs.Filtered.DbName = topoproto.TabletDbName(tablet)
+			agent.DBConfigs.Filtered.DbName = dbname
 		}
-		agent.DBConfigs.App.Keyspace = tablet.Keyspace
-		agent.DBConfigs.App.Shard = tablet.Shard
 	}
 
 	// create and register the RPC services from UpdateStream
@@ -579,9 +564,9 @@ func (agent *ActionAgent) Start(ctx context.Context, mysqlPort, vtPort, gRPCPort
 
 	// initialize tablet server
 	if err := agent.QueryServiceControl.InitDBConfig(querypb.Target{
-		Keyspace:   tablet.Keyspace,
-		Shard:      tablet.Shard,
-		TabletType: tablet.Type,
+		Keyspace:   agent.initialTablet.Keyspace,
+		Shard:      agent.initialTablet.Shard,
+		TabletType: agent.initialTablet.Type,
 	}, agent.DBConfigs, agent.MysqlDaemon); err != nil {
 		return fmt.Errorf("failed to InitDBConfig: %v", err)
 	}
@@ -593,26 +578,25 @@ func (agent *ActionAgent) Start(ctx context.Context, mysqlPort, vtPort, gRPCPort
 		statsKeyRangeStart := stats.NewString("TabletKeyRangeStart")
 		statsKeyRangeEnd := stats.NewString("TabletKeyRangeEnd")
 
-		statsKeyspace.Set(tablet.Keyspace)
-		statsShard.Set(tablet.Shard)
-		if key.KeyRangeIsPartial(tablet.KeyRange) {
-			statsKeyRangeStart.Set(hex.EncodeToString(tablet.KeyRange.Start))
-			statsKeyRangeEnd.Set(hex.EncodeToString(tablet.KeyRange.End))
+		statsKeyspace.Set(agent.initialTablet.Keyspace)
+		statsShard.Set(agent.initialTablet.Shard)
+		if key.KeyRangeIsPartial(agent.initialTablet.KeyRange) {
+			statsKeyRangeStart.Set(hex.EncodeToString(agent.initialTablet.KeyRange.Start))
+			statsKeyRangeEnd.Set(hex.EncodeToString(agent.initialTablet.KeyRange.End))
 		}
 	}
 
-	// initialize the key range query rule
-	if err := agent.initializeKeyRangeRule(ctx, tablet.Keyspace, tablet.KeyRange); err != nil {
-		return err
-	}
-
-	// update our state
-	oldTablet := &topodatapb.Tablet{}
-	agent.updateState(ctx, oldTablet, "Start")
+	// Initialize the current tablet to match our current running
+	// state: Has most field filled in, but type is UNKNOWN.
+	// Subsequents calls to updateState or refreshTablet
+	// will then work as expected.
+	startingTablet := proto.Clone(agent.initialTablet).(*topodatapb.Tablet)
+	startingTablet.Type = topodatapb.TabletType_UNKNOWN
+	agent.setTablet(startingTablet)
 
 	// run a background task to rebuild the SrvKeyspace in our cell/keyspace
 	// if it doesn't exist yet
-	go agent.maybeRebuildKeyspace(tablet.Alias.Cell, tablet.Keyspace)
+	go agent.maybeRebuildKeyspace(agent.initialTablet.Alias.Cell, agent.initialTablet.Keyspace)
 
 	return nil
 }
@@ -666,56 +650,32 @@ func (agent *ActionAgent) checkTabletMysqlPort(ctx context.Context, tablet *topo
 	return newTablet
 }
 
-// initializeKeyRangeRule will create and set the key range rules
-func (agent *ActionAgent) initializeKeyRangeRule(ctx context.Context, keyspace string, keyRange *topodatapb.KeyRange) error {
-	// check we have a partial key range
-	if !key.KeyRangeIsPartial(keyRange) {
-		log.Infof("Tablet covers the full KeyRange, not adding KeyRange query rule")
-		return nil
-	}
-
-	// read the keyspace to get the sharding column name
-	keyspaceInfo, err := agent.TopoServer.GetKeyspace(ctx, keyspace)
-	if err != nil {
-		return fmt.Errorf("cannot read keyspace %v to get sharding key: %v", keyspace, err)
-	}
-	if keyspaceInfo.ShardingColumnName == "" {
-		log.Infof("Keyspace %v has an empty ShardingColumnName, not adding KeyRange query rule", keyspace)
-		return nil
-	}
-
-	// create the rules
-	log.Infof("Restricting to keyrange: %v", key.KeyRangeString(keyRange))
-	keyrangeRules := tabletserver.NewQueryRules()
-	dmlPlans := []struct {
-		planID   planbuilder.PlanType
-		onAbsent bool
-	}{
-		{planbuilder.PlanInsertPK, true},
-		{planbuilder.PlanInsertSubquery, true},
-		{planbuilder.PlanPassDML, false},
-		{planbuilder.PlanDMLPK, false},
-		{planbuilder.PlanDMLSubquery, false},
-		{planbuilder.PlanUpsertPK, false},
-	}
-	for _, plan := range dmlPlans {
-		qr := tabletserver.NewQueryRule(
-			fmt.Sprintf("enforce %v range for %v", keyspaceInfo.ShardingColumnName, plan.planID),
-			fmt.Sprintf("%v_not_in_range_%v", keyspaceInfo.ShardingColumnName, plan.planID),
-			tabletserver.QRFail,
-		)
-		qr.AddPlanCond(plan.planID)
-		err := qr.AddBindVarCond(keyspaceInfo.ShardingColumnName, plan.onAbsent, true, tabletserver.QRNotIn, keyRange)
-		if err != nil {
-			return fmt.Errorf("Unable to add key range rule: %v", err)
+// withRetry will exponentially back off and retry a function upon
+// failure, until the context is Done(), or the function returned with
+// no error. We use this at startup with a context timeout set to the
+// value of the init_timeout flag, so we can try to modify the
+// topology over a longer period instead of dying right away.
+func (agent *ActionAgent) withRetry(ctx context.Context, description string, work func() error) error {
+	backoff := 1 * time.Second
+	for {
+		err := work()
+		if err == nil || err == context.Canceled || err == context.DeadlineExceeded {
+			return err
 		}
-		keyrangeRules.Add(qr)
-	}
 
-	// and load them
-	agent.QueryServiceControl.RegisterQueryRuleSource(keyrangeQueryRules)
-	if err := agent.QueryServiceControl.SetQueryRules(keyrangeQueryRules, keyrangeRules); err != nil {
-		return fmt.Errorf("failed to load query rule set %s: %s", keyrangeQueryRules, err)
+		log.Warningf("%v failed (%v), backing off %v before retrying", description, err, backoff)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+			// Exponential backoff with 1.3 as a factor,
+			// and randomized down by at most 20
+			// percent. The generated time series looks
+			// good.  Also note rand.Seed is called at
+			// init() time in binlog_players.go.
+			f := float64(backoff) * 1.3
+			f -= f * 0.2 * rand.Float64()
+			backoff = time.Duration(f)
+		}
 	}
-	return nil
 }

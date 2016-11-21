@@ -11,7 +11,7 @@ class VTGateConnTest extends \PHPUnit_Framework_TestCase
 
     private static $client;
 
-    private static $ECHO_QUERY = 'echo://test query';
+    private static $ECHO_QUERY = "echo://test query with utf-8: \xe6\x88\x91\xe8\x83\xbd\xe5\x90\x9e\xe4\xb8\x8b\xe7\x8e\xbb\xe7\x92\x83\xe8\x80\x8c\xe4\xb8\x8d\xe5\x82\xb7\xe8\xba\xab\xe9\xab\x94";
 
     private static $ERROR_PREFIX = 'error://';
 
@@ -89,17 +89,24 @@ class VTGateConnTest extends \PHPUnit_Framework_TestCase
         }
         self::$proc = $proc;
 
-        // Wait for connection to be accepted.
+        // Wait for the server to be ready.
+        $client = new Grpc\Client("$addr:$port", [
+            'credentials' => \Grpc\ChannelCredentials::createInsecure()
+        ]);
         $ctx = Context::getDefault()->withDeadlineAfter(5.0);
         $level = error_reporting(error_reporting() & ~ E_WARNING);
+        // The client creation doesn't necessarily mean the server is up.
+        // Send a test RPC to make sure the connection is good.
+        $conn = new VTGateConn($client);
         while (! $ctx->isCancelled()) {
             try {
-                $client = new Grpc\Client("$addr:$port", [
-                    'credentials' => \Grpc\ChannelCredentials::createInsecure()
-                ]);
-            } catch (Exception $e) {
+                $conn->execute($ctx, '', array(), 0);
+            } catch (Error\Transient $e) {
+                // The connection isn't ready yet. Wait and try again.
                 usleep(100000);
                 continue;
+            } catch (\Vitess\Exception $e) {
+                // Non-transient error means the connection is at least up.
             }
             break;
         }
@@ -383,13 +390,13 @@ class VTGateConnTest extends \PHPUnit_Framework_TestCase
             'uint_from_string' => new UnsignedInt('678')
         );
 
-        $splits = $conn->splitQuery($ctx, self::$KEYSPACE, self::$ECHO_QUERY, $input_bind_vars, 'split_column', 123);
+        $splits = $conn->splitQuery($ctx, self::$KEYSPACE, self::$ECHO_QUERY, $input_bind_vars, array('split_columns'), 123, 456, Proto\Query\SplitQueryRequest\Algorithm::FULL_SCAN);
         $actual = $splits[0];
         $bound_query = $actual->getQuery();
 
         $this->assertEquals(self::$KEYSPACE, $actual->getKeyRangePart()
             ->getKeyspace());
-        $this->assertEquals(self::$ECHO_QUERY . ':split_column:123', $bound_query->getSql());
+        $this->assertEquals(self::$ECHO_QUERY . ':[split_columns]:123:456:FULL_SCAN', $bound_query->getSql());
 
         // The map of bind vars is implemented as a repeated field, and the order of
         // the entries is arbitrary. First load them into a map.

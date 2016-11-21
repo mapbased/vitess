@@ -81,11 +81,6 @@ func (fbc *fakeBinlogClient) Dial(tablet *topodatapb.Tablet, connTimeout time.Du
 func (fbc *fakeBinlogClient) Close() {
 }
 
-// ServeUpdateStream is part of the binlogplayer.Client interface
-func (fbc *fakeBinlogClient) ServeUpdateStream(ctx context.Context, position string) (binlogplayer.StreamEventStream, error) {
-	return nil, fmt.Errorf("Should never be called")
-}
-
 type testStreamEventAdapter struct {
 	c   chan *binlogdatapb.BinlogTransaction
 	ctx context.Context
@@ -125,17 +120,17 @@ type fakeTabletConn struct {
 }
 
 // Execute is part of the TabletConn interface
-func (ftc *fakeTabletConn) Execute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, transactionID int64) (*sqltypes.Result, error) {
+func (ftc *fakeTabletConn) Execute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, transactionID int64, options *querypb.ExecuteOptions) (*sqltypes.Result, error) {
 	return nil, fmt.Errorf("not implemented in this test")
 }
 
 // Execute is part of the TabletConn interface
-func (ftc *fakeTabletConn) ExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool, transactionID int64) ([]sqltypes.Result, error) {
+func (ftc *fakeTabletConn) ExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool, transactionID int64, options *querypb.ExecuteOptions) ([]sqltypes.Result, error) {
 	return nil, fmt.Errorf("not implemented in this test")
 }
 
 // StreamExecute is part of the TabletConn interface
-func (ftc *fakeTabletConn) StreamExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}) (sqltypes.ResultStream, error) {
+func (ftc *fakeTabletConn) StreamExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, options *querypb.ExecuteOptions) (sqltypes.ResultStream, error) {
 	return nil, fmt.Errorf("not implemented in this test")
 }
 
@@ -154,32 +149,58 @@ func (ftc *fakeTabletConn) Rollback(ctx context.Context, target *querypb.Target,
 	return fmt.Errorf("not implemented in this test")
 }
 
+// Prepare is part of the TabletConn interface
+func (ftc *fakeTabletConn) Prepare(ctx context.Context, target *querypb.Target, transactionID int64, dtid string) (err error) {
+	return fmt.Errorf("not implemented in this test")
+}
+
+// CommitPrepared is part of the TabletConn interface
+func (ftc *fakeTabletConn) CommitPrepared(ctx context.Context, target *querypb.Target, dtid string) (err error) {
+	return fmt.Errorf("not implemented in this test")
+}
+
+// RollbackPrepared is part of the TabletConn interface
+func (ftc *fakeTabletConn) RollbackPrepared(ctx context.Context, target *querypb.Target, dtid string, originalID int64) (err error) {
+	return fmt.Errorf("not implemented in this test")
+}
+
+// CreateTransaction is part of the TabletConn interface
+func (ftc *fakeTabletConn) CreateTransaction(ctx context.Context, target *querypb.Target, dtid string, participants []*querypb.Target) (err error) {
+	return fmt.Errorf("not implemented in this test")
+}
+
+// StartCommit is part of the TabletConn interface
+func (ftc *fakeTabletConn) StartCommit(ctx context.Context, target *querypb.Target, transactionID int64, dtid string) (err error) {
+	return fmt.Errorf("not implemented in this test")
+}
+
+// SetRollback is part of the TabletConn interface
+func (ftc *fakeTabletConn) SetRollback(ctx context.Context, target *querypb.Target, dtid string, transactionID int64) (err error) {
+	return fmt.Errorf("not implemented in this test")
+}
+
+// ConcludeTransaction is part of the TabletConn interface
+func (ftc *fakeTabletConn) ConcludeTransaction(ctx context.Context, target *querypb.Target, dtid string) (err error) {
+	return fmt.Errorf("not implemented in this test")
+}
+
+// ReadTransaction is part of the TabletConn interface
+func (ftc *fakeTabletConn) ReadTransaction(ctx context.Context, target *querypb.Target, dtid string) (metadata *querypb.TransactionMetadata, err error) {
+	return nil, fmt.Errorf("not implemented in this test")
+}
+
 // BeginExecute is part of the TabletConn interface
-func (ftc *fakeTabletConn) BeginExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}) (*sqltypes.Result, int64, error) {
+func (ftc *fakeTabletConn) BeginExecute(ctx context.Context, target *querypb.Target, query string, bindVars map[string]interface{}, options *querypb.ExecuteOptions) (*sqltypes.Result, int64, error) {
 	return nil, 0, fmt.Errorf("not implemented in this test")
 }
 
 // BeginExecuteBatch is part of the TabletConn interface
-func (ftc *fakeTabletConn) BeginExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool) ([]sqltypes.Result, int64, error) {
+func (ftc *fakeTabletConn) BeginExecuteBatch(ctx context.Context, target *querypb.Target, queries []querytypes.BoundQuery, asTransaction bool, options *querypb.ExecuteOptions) ([]sqltypes.Result, int64, error) {
 	return nil, 0, fmt.Errorf("not implemented in this test")
 }
 
-// Close is part of the TabletConn interface
-func (ftc *fakeTabletConn) Close() {
-}
-
-// Tablet is part of the TabletConn interface
-func (ftc *fakeTabletConn) Tablet() *topodatapb.Tablet {
-	return ftc.tablet
-}
-
 // SplitQuery is part of the TabletConn interface
-func (ftc *fakeTabletConn) SplitQuery(ctx context.Context, target *querypb.Target, query querytypes.BoundQuery, splitColumn string, splitCount int64) ([]querytypes.QuerySplit, error) {
-	return nil, fmt.Errorf("not implemented in this test")
-}
-
-// SplitQuery is part of the TabletConn interface
-func (ftc *fakeTabletConn) SplitQueryV2(
+func (ftc *fakeTabletConn) SplitQuery(
 	ctx context.Context,
 	target *querypb.Target,
 	query querytypes.BoundQuery,
@@ -232,6 +253,21 @@ func (ftc *fakeTabletConn) StreamHealth(ctx context.Context) (tabletconn.StreamH
 		c:   c,
 		err: &finalErr,
 	}, nil
+}
+
+// UpdateStream is part of the TabletConn interface
+func (ftc *fakeTabletConn) UpdateStream(ctx context.Context, target *querypb.Target, position string, timestamp int64) (tabletconn.StreamEventReader, error) {
+	return nil, fmt.Errorf("not implemented in this test")
+}
+
+// Close is part of the TabletConn interface
+func (ftc *fakeTabletConn) Close(ctx context.Context) error {
+	return nil
+}
+
+// Tablet is part of the TabletConn interface
+func (ftc *fakeTabletConn) Tablet() *topodatapb.Tablet {
+	return ftc.tablet
 }
 
 // createSourceTablet is a helper method to create the source tablet
@@ -444,8 +480,10 @@ func TestBinlogPlayerMapHorizontalSplit(t *testing.T) {
 				Sql:      []byte("INSERT INTO tablet VALUES(1)"),
 			},
 		},
-		Timestamp:     72,
-		TransactionId: "MariaDB/0-1-1235",
+		EventToken: &querypb.EventToken{
+			Timestamp: 72,
+			Position:  "MariaDB/0-1-1235",
+		},
 	}
 
 	// and make sure it results in a committed statement
@@ -640,8 +678,10 @@ func TestBinlogPlayerMapHorizontalSplitStopStartUntil(t *testing.T) {
 					Sql:      []byte("INSERT INTO tablet VALUES(1)"),
 				},
 			},
-			Timestamp:     72,
-			TransactionId: "MariaDB/0-1-1235",
+			EventToken: &querypb.EventToken{
+				Timestamp: 72,
+				Position:  "MariaDB/0-1-1235",
+			},
 		}
 
 		// and make sure it results in a committed statement
@@ -663,7 +703,8 @@ func TestBinlogPlayerMapHorizontalSplitStopStartUntil(t *testing.T) {
 
 	// now restart the map until we get the right BlpPosition
 	mysqlDaemon.BinlogPlayerEnabled = false
-	ctx1, _ := context.WithTimeout(ctx, 5*time.Second)
+	ctx1, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	if err := bpm.RunUntil(ctx1, []*tabletmanagerdatapb.BlpPosition{
 		{
 			Uid:      1,
@@ -825,8 +866,10 @@ func TestBinlogPlayerMapVerticalSplit(t *testing.T) {
 				Sql:      []byte("INSERT INTO tablet VALUES(1)"),
 			},
 		},
-		Timestamp:     72,
-		TransactionId: "MariaDB/0-1-1235",
+		EventToken: &querypb.EventToken{
+			Timestamp: 72,
+			Position:  "MariaDB/0-1-1235",
+		},
 	}
 
 	// and make sure it results in a committed statement

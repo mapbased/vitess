@@ -88,15 +88,10 @@ performs.
               of restoring itself from the latest backup. After it finishes,
               it will begin replicating at the GTID position of the backup,
               and become either *replica* or *rdonly*.
-* **worker** - A *rdonly* tablet that has been reserved by a Vitess background
-             process (such as resharding). While it is a *worker* type, the
-             tablet will not be available to serve queries from Vitess clients.
-             After the background job finishes, the tablet will resume
-             replication (if necessary) and go back to being *rdonly*.
+* **drained** - A tablet that has been reserved by a Vitess background
+             process (such as rdonly tablets for resharding).
 
-<div style="display:none">
-TODO: Add pointer to complete list of types and explain how to update type?
-</div>
+<!-- TODO: Add pointer to complete list of types and explain how to update type? -->
 
 ## Keyspace Graph
 
@@ -149,7 +144,7 @@ to a newly designated master database so that replication can continue.
 
 ## Topology Service
 
-The *[Topology Service](https://github.com/youtube/vitess/blob/master/doc/TopologyService.md)*
+The *[Topology Service](/user-guide/topology-service.html)*
 is a set of backend processes running on different servers.
 Those servers store topology data and provide a distributed locking service.
 

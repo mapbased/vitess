@@ -49,6 +49,60 @@
 "select id from user group by col"
 "symbol col not found"
 
+# HAVING references base name of a column
+"select user.col1 from user having col1 = 2"
+{
+  "Original": "select user.col1 from user having col1 = 2",
+  "Instructions": {
+    "Opcode": "SelectScatter",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "Query": "select user.col1 from user having col1 = 2",
+    "FieldQuery": "select user.col1 from user where 1 != 1"
+  }
+}
+
+# HAVING references base name of non-existent column
+"select user.col1 from user having col2 = 2"
+"symbol col2 not found"
+
+# ambiguous symbol reference
+"select user.col1, user_extra.col1 from user join user_extra having col1 = 2"
+"ambiguous symbol reference: col1"
+
+# non-ambiguous symbol reference
+"select user.col1, user_extra.col1 from user join user_extra having user_extra.col1 = 2"
+{
+  "Original": "select user.col1, user_extra.col1 from user join user_extra having user_extra.col1 = 2",
+  "Instructions": {
+    "Opcode": "Join",
+    "Left": {
+      "Opcode": "SelectScatter",
+      "Keyspace": {
+        "Name": "user",
+        "Sharded": true
+      },
+      "Query": "select user.col1 from user",
+      "FieldQuery": "select user.col1 from user where 1 != 1"
+    },
+    "Right": {
+      "Opcode": "SelectScatter",
+      "Keyspace": {
+        "Name": "user",
+        "Sharded": true
+      },
+      "Query": "select user_extra.col1 from user_extra having user_extra.col1 = 2",
+      "FieldQuery": "select user_extra.col1 from user_extra where 1 != 1"
+    },
+    "Cols": [
+      -1,
+      1
+    ]
+  }
+}
+
 # HAVING multi-route
 "select user.col1 as a, user.col2, user_extra.col3 from user join user_extra having 1 = 1 and a = 1 and a = user.col2 and user_extra.col3 = 1"
 {
@@ -119,6 +173,23 @@
 # We're looking for symbol not found error this time.
 "select id, col from user having col in (select user_extra.col, user.id as user_id from user join user_extra on user.id = user_extra.user_id having user_id = notthere)"
 "symbol notthere not found"
+
+# ORDER BY, reference col from local table.
+"select col from user where id = 5 order by aa"
+{
+  "Original": "select col from user where id = 5 order by aa",
+  "Instructions": {
+    "Opcode": "SelectEqualUnique",
+    "Keyspace": {
+      "Name": "user",
+      "Sharded": true
+    },
+    "Query": "select col from user where id = 5 order by aa asc",
+    "FieldQuery": "select col from user where 1 != 1",
+    "Vindex": "user_index",
+    "Values": 5
+  }
+}
 
 # ORDER BY uses column numbers
 "select col from user where id = 1 order by 1"
@@ -309,6 +380,10 @@
   }
 }
 
+# Order by, verify outer symtab is searched according to its own context.
+"select u.id from user u having u.id in (select col2 from user where user.id = u.id order by u.col)"
+"symbol u.col not found"
+
 # Order by, qualified '*' expression, name mismatched.
 "select user.* from user where id = 5 order by e.col"
 "symbol e.col not found"
@@ -316,10 +391,6 @@
 # Order by, invalid column number
 "select col from user order by 1.1"
 "error parsing order by clause: 1.1"
-
-# Order by, invalid column name
-"select col from user order by aa"
-"symbol aa not found"
 
 # Order by, out of range column number
 "select col from user order by 2"

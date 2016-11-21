@@ -11,6 +11,7 @@ Commands are listed in the following groups:
 * [Serving Graph](#serving-graph)
 * [Shards](#shards)
 * [Tablets](#tablets)
+* [Workflows](#workflows)
 
 
 ## Generic
@@ -236,7 +237,7 @@ Makes the &lt;destination keyspace/shard&gt; serve the given type. This command 
     * <code>schema_apply</code> &ndash; A slaved copy of data that had been serving query traffic but that is now applying a schema change. Following the change, the tablet will revert to its serving type.
     * <code>snapshot_source</code> &ndash; A slaved copy of data where mysqld is <b>not</b> running and where Vitess is serving data files to clone slaves. Use this command to enter this mode: <pre>vtctl Snapshot -server-mode ...</pre> Use this command to exit this mode: <pre>vtctl SnapshotSourceEnd ...</pre>
     * <code>spare</code> &ndash; A slaved copy of data that is ready but not serving query traffic. The data could be a potential master tablet.
-    * <code>worker</code> &ndash; A tablet that is in use by a vtworker process. The tablet is likely lagging in replication.
+    * <code>drained</code> &ndash; A tablet that is reserved for a background process. For example, a tablet used by a vtworker process, where the tablet is likely lagging in replication.
 
 
 
@@ -487,6 +488,7 @@ Blocks until no new queries were observed on all tablets with the given tablet t
 * [VtTabletExecute](#vttabletexecute)
 * [VtTabletRollback](#vttabletrollback)
 * [VtTabletStreamHealth](#vttabletstreamhealth)
+* [VtTabletUpdateStream](#vttabletupdatestream)
 
 ### VtGateExecute
 
@@ -494,7 +496,7 @@ Executes the given SQL query with the provided bound variables against the vtgat
 
 #### Example
 
-<pre class="command-example">VtGateExecute -server &lt;vtgate&gt; [-bind_variables &lt;JSON map&gt;] [-connect_timeout &lt;connect timeout&gt;] [-keyspace &lt;default keyspace&gt;] [-tablet_type &lt;tablet type&gt;] [-json] &lt;sql&gt;</pre>
+<pre class="command-example">VtGateExecute -server &lt;vtgate&gt; [-bind_variables &lt;JSON map&gt;] [-connect_timeout &lt;connect timeout&gt;] [-keyspace &lt;default keyspace&gt;] [-tablet_type &lt;tablet type&gt;] [-options &lt;proto text options&gt;] [-json] &lt;sql&gt;</pre>
 
 #### Flags
 
@@ -503,6 +505,7 @@ Executes the given SQL query with the provided bound variables against the vtgat
 | connect_timeout | Duration | Connection timeout for vtgate client |
 | json | Boolean | Output JSON instead of human-readable table |
 | keyspace | string | default keyspace to use |
+| options | string | execute options values as a text encoded proto of the ExecuteOptions structure |
 | server | string | VtGate server to connect to |
 | tablet_type | string | tablet type to query |
 
@@ -525,7 +528,7 @@ Executes the given SQL query with the provided bound variables against the vtgat
 
 #### Example
 
-<pre class="command-example">VtGateExecuteKeyspaceIds -server &lt;vtgate&gt; -keyspace &lt;keyspace&gt; -keyspace_ids &lt;ks1 in hex&gt;,&lt;k2 in hex&gt;,... [-bind_variables &lt;JSON map&gt;] [-connect_timeout &lt;connect timeout&gt;] [-tablet_type &lt;tablet type&gt;] [-json] &lt;sql&gt;</pre>
+<pre class="command-example">VtGateExecuteKeyspaceIds -server &lt;vtgate&gt; -keyspace &lt;keyspace&gt; -keyspace_ids &lt;ks1 in hex&gt;,&lt;k2 in hex&gt;,... [-bind_variables &lt;JSON map&gt;] [-connect_timeout &lt;connect timeout&gt;] [-tablet_type &lt;tablet type&gt;] [-options &lt;proto text options&gt;] [-json] &lt;sql&gt;</pre>
 
 #### Flags
 
@@ -535,6 +538,7 @@ Executes the given SQL query with the provided bound variables against the vtgat
 | json | Boolean | Output JSON instead of human-readable table |
 | keyspace | string | keyspace to send query to |
 | keyspace_ids | string | comma-separated list of keyspace ids (in hex) that will map into shards to send query to |
+| options | string | execute options values as a text encoded proto of the ExecuteOptions structure |
 | server | string | VtGate server to connect to |
 | tablet_type | string | tablet type to query |
 
@@ -560,7 +564,7 @@ Executes the given SQL query with the provided bound variables against the vtgat
 
 #### Example
 
-<pre class="command-example">VtGateExecuteShards -server &lt;vtgate&gt; -keyspace &lt;keyspace&gt; -shards &lt;shard0&gt;,&lt;shard1&gt;,... [-bind_variables &lt;JSON map&gt;] [-connect_timeout &lt;connect timeout&gt;] [-tablet_type &lt;tablet type&gt;] [-json] &lt;sql&gt;</pre>
+<pre class="command-example">VtGateExecuteShards -server &lt;vtgate&gt; -keyspace &lt;keyspace&gt; -shards &lt;shard0&gt;,&lt;shard1&gt;,... [-bind_variables &lt;JSON map&gt;] [-connect_timeout &lt;connect timeout&gt;] [-tablet_type &lt;tablet type&gt;] [-options &lt;proto text options&gt;] [-json] &lt;sql&gt;</pre>
 
 #### Flags
 
@@ -569,6 +573,7 @@ Executes the given SQL query with the provided bound variables against the vtgat
 | connect_timeout | Duration | Connection timeout for vtgate client |
 | json | Boolean | Output JSON instead of human-readable table |
 | keyspace | string | keyspace to send query to |
+| options | string | execute options values as a text encoded proto of the ExecuteOptions structure |
 | server | string | VtGate server to connect to |
 | shards | string | comma-separated list of shards to send query to |
 | tablet_type | string | tablet type to query |
@@ -685,7 +690,7 @@ Executes the given query on the given tablet.
 
 #### Example
 
-<pre class="command-example">VtTabletExecute [-bind_variables &lt;JSON map&gt;] [-connect_timeout &lt;connect timeout&gt;] [-transaction_id &lt;transaction_id&gt;] [-tablet_type &lt;tablet_type&gt;] [-json] -keyspace &lt;keyspace&gt; -shard &lt;shard&gt; &lt;tablet alias&gt; &lt;sql&gt;</pre>
+<pre class="command-example">VtTabletExecute [-bind_variables &lt;JSON map&gt;] [-connect_timeout &lt;connect timeout&gt;] [-transaction_id &lt;transaction_id&gt;] [-tablet_type &lt;tablet_type&gt;] [-options &lt;proto text options&gt;] [-json] -keyspace &lt;keyspace&gt; -shard &lt;shard&gt; &lt;tablet alias&gt; &lt;sql&gt;</pre>
 
 #### Flags
 
@@ -693,6 +698,7 @@ Executes the given query on the given tablet.
 | :-------- | :--------- | :--------- |
 | connect_timeout | Duration | Connection timeout for vttablet client |
 | json | Boolean | Output JSON instead of human-readable table |
+| options | string | execute options values as a text encoded proto of the ExecuteOptions structure |
 | transaction_id | Int | transaction id to use, if inside a transaction. |
 
 
@@ -768,6 +774,36 @@ Executes the StreamHealth streaming query to a vttablet process. Will stop after
 * stream ended early: %v
 
 
+### VtTabletUpdateStream
+
+Executes the UpdateStream streaming query to a vttablet process. Will stop after getting &lt;count&gt; answers.
+
+#### Example
+
+<pre class="command-example">VtTabletUpdateStream [-count &lt;count, default 1&gt;] [-connect_timeout &lt;connect timeout&gt;] [-position &lt;position&gt;] [-timestamp &lt;timestamp&gt;] &lt;tablet alias&gt;</pre>
+
+#### Flags
+
+| Name | Type | Definition |
+| :-------- | :--------- | :--------- |
+| connect_timeout | Duration | Connection timeout for vttablet client |
+| count | Int | number of responses to wait for |
+| position | string | position to start the stream from |
+| timestamp | Int | timestamp to start the stream from |
+
+
+#### Arguments
+
+* <code>&lt;count default 1&gt;</code> &ndash; Required.
+* <code>&lt;tablet alias&gt;</code> &ndash; Required. A Tablet Alias uniquely identifies a vttablet. The argument value is in the format <code>&lt;cell name&gt;-&lt;uid&gt;</code>.
+
+#### Errors
+
+* The <code>&lt;tablet alias&gt;</code> argument is required for the <code>&lt;VtTabletUpdateStream&gt;</code> command. This error occurs if the command is not called with exactly one argument.
+* cannot connect to tablet %v: %v
+* stream ended early: %v
+
+
 ## Replication Graph
 
 * [GetShardReplication](#getshardreplication)
@@ -792,8 +828,65 @@ Outputs a JSON structure that contains information about the ShardReplication.
 
 ## Resharding Throttler
 
+* [GetThrottlerConfiguration](#getthrottlerconfiguration)
+* [ResetThrottlerConfiguration](#resetthrottlerconfiguration)
 * [ThrottlerMaxRates](#throttlermaxrates)
 * [ThrottlerSetMaxRate](#throttlersetmaxrate)
+* [UpdateThrottlerConfiguration](#updatethrottlerconfiguration)
+
+### GetThrottlerConfiguration
+
+Returns the current configuration of the MaxReplicationLag module. If no throttler name is specified, the configuration of all throttlers will be returned.
+
+#### Example
+
+<pre class="command-example">GetThrottlerConfiguration -server &lt;vtworker or vttablet&gt; [&lt;throttler name&gt;]</pre>
+
+#### Flags
+
+| Name | Type | Definition |
+| :-------- | :--------- | :--------- |
+| server | string | vtworker or vttablet to connect to |
+
+
+#### Arguments
+
+* <code>&lt;vtworker or vttablet&gt;</code> &ndash; Required.
+* <code>&lt;throttler name&gt;</code> &ndash; Optional.
+
+#### Errors
+
+* the <code>&lt;GetThrottlerConfiguration&gt;</code> command accepts only <code>&lt;throttler name&gt;</code> as optional positional parameter This error occurs if the command is not called with more than 1 arguments.
+* error creating a throttler client for <code>&lt;server&gt;</code> '%v': %v
+* failed to get the throttler configuration from <code>&lt;server&gt;</code> '%v': %v
+
+
+### ResetThrottlerConfiguration
+
+Resets the current configuration of the MaxReplicationLag module. If no throttler name is specified, the configuration of all throttlers will be reset.
+
+#### Example
+
+<pre class="command-example">ResetThrottlerConfiguration -server &lt;vtworker or vttablet&gt; [&lt;throttler name&gt;]</pre>
+
+#### Flags
+
+| Name | Type | Definition |
+| :-------- | :--------- | :--------- |
+| server | string | vtworker or vttablet to connect to |
+
+
+#### Arguments
+
+* <code>&lt;vtworker or vttablet&gt;</code> &ndash; Required.
+* <code>&lt;throttler name&gt;</code> &ndash; Optional.
+
+#### Errors
+
+* the <code>&lt;ResetThrottlerConfiguration&gt;</code> command accepts only <code>&lt;throttler name&gt;</code> as optional positional parameter This error occurs if the command is not called with more than 1 arguments.
+* error creating a throttler client for <code>&lt;server&gt;</code> '%v': %v
+* failed to get the throttler configuration from <code>&lt;server&gt;</code> '%v': %v
+
 
 ### ThrottlerMaxRates
 
@@ -847,6 +940,34 @@ Sets the max rate for all active resharding throttlers on the server.
 * failed to parse rate '%v' as integer value: %v
 * error creating a throttler client for <code>&lt;server&gt;</code> '%v': %v
 * failed to set the throttler rate on <code>&lt;server&gt;</code> '%v': %v
+
+
+### UpdateThrottlerConfiguration
+
+Updates the configuration of the MaxReplicationLag module. The configuration must be specified as protobuf text. If a field is omitted or has a zero value, it will be ignored unless -copy_zero_values is specified. If no throttler name is specified, all throttlers will be updated.
+
+#### Example
+
+<pre class="command-example">UpdateThrottlerConfiguration `-server &lt;vtworker or vttablet&gt; [-copy_zero_values] "&lt;configuration protobuf text&gt;" [&lt;throttler name&gt;]`</pre>
+
+#### Flags
+
+| Name | Type | Definition |
+| :-------- | :--------- | :--------- |
+| copy_zero_values | Boolean | If true, fields with zero values will be copied as well |
+| server | string | vtworker or vttablet to connect to |
+
+
+#### Arguments
+
+* <code>&lt;vtworker or vttablet&gt;</code> &ndash; Required.
+* <code>&lt;throttler name&gt;</code> &ndash; Optional.
+
+#### Errors
+
+* Failed to unmarshal the configuration protobuf text (%v) into a protobuf instance: %v
+* error creating a throttler client for <code>&lt;server&gt;</code> '%v': %v
+* failed to update the throttler configuration on <code>&lt;server&gt;</code> '%v': %v
 
 
 ## Schema, Version, Permissions
@@ -1276,12 +1397,13 @@ Deletes the specified shard(s). In recursive mode, it also deletes all tablets b
 
 #### Example
 
-<pre class="command-example">DeleteShard [-recursive] &lt;keyspace/shard&gt; ...</pre>
+<pre class="command-example">DeleteShard [-recursive] [-even_if_serving] &lt;keyspace/shard&gt; ...</pre>
 
 #### Flags
 
 | Name | Type | Definition |
 | :-------- | :--------- | :--------- |
+| even_if_serving | Boolean | Remove the shard even if it is serving. Use with caution. |
 | recursive | Boolean | Also delete all tablets belonging to the shard. |
 
 
@@ -1300,22 +1422,21 @@ Reparents the shard to the new master. Assumes the old master is dead and not re
 
 #### Example
 
-<pre class="command-example">EmergencyReparentShard &lt;keyspace/shard&gt; &lt;tablet alias&gt;</pre>
+<pre class="command-example">EmergencyReparentShard -keyspace_shard=&lt;keyspace/shard&gt; -new_master=&lt;tablet alias&gt;</pre>
 
 #### Flags
 
 | Name | Type | Definition |
 | :-------- | :--------- | :--------- |
+| keyspace_shard | string | keyspace/shard of the shard that needs to be reparented |
+| new_master | string | alias of a tablet that should be the new master |
 | wait_slave_timeout | Duration | time to wait for slaves to catch up in reparenting |
 
 
-#### Arguments
-
-* <code>&lt;tablet alias&gt;</code> &ndash; Required. A Tablet Alias uniquely identifies a vttablet. The argument value is in the format <code>&lt;cell name&gt;-&lt;uid&gt;</code>.
-
 #### Errors
 
-* action <code>&lt;EmergencyReparentShard&gt;</code> requires <code>&lt;keyspace/shard&gt;</code> <code>&lt;tablet alias&gt;</code> This error occurs if the command is not called with exactly 2 arguments.
+* action <code>&lt;EmergencyReparentShard&gt;</code> requires -keyspace_shard=<code>&lt;keyspace/shard&gt;</code> -new_master=<code>&lt;tablet alias&gt;</code> This error occurs if the command is not called with exactly 0 arguments.
+* cannot use legacy syntax and flag -<code>&lt;new_master&gt;</code> for action <code>&lt;EmergencyReparentShard&gt;</code> at the same time
 
 
 ### GetShard
@@ -1393,26 +1514,26 @@ Lists all tablets in the specified shard.
 
 ### PlannedReparentShard
 
-Reparents the shard to the new master. Both old and new master need to be up and running.
+Reparents the shard to the new master, or away from old master. Both old and new master need to be up and running.
 
 #### Example
 
-<pre class="command-example">PlannedReparentShard &lt;keyspace/shard&gt; &lt;tablet alias&gt;</pre>
+<pre class="command-example">PlannedReparentShard -keyspace_shard=&lt;keyspace/shard&gt; [-new_master=&lt;tablet alias&gt;] [-avoid_master=&lt;tablet alias&gt;]</pre>
 
 #### Flags
 
 | Name | Type | Definition |
 | :-------- | :--------- | :--------- |
+| avoid_master | string | alias of a tablet that should not be the master, i.e. reparent to any other tablet if this one is the master |
+| keyspace_shard | string | keyspace/shard of the shard that needs to be reparented |
+| new_master | string | alias of a tablet that should be the new master |
 | wait_slave_timeout | Duration | time to wait for slaves to catch up in reparenting |
 
 
-#### Arguments
-
-* <code>&lt;tablet alias&gt;</code> &ndash; Required. A Tablet Alias uniquely identifies a vttablet. The argument value is in the format <code>&lt;cell name&gt;-&lt;uid&gt;</code>.
-
 #### Errors
 
-* action <code>&lt;PlannedReparentShard&gt;</code> requires <code>&lt;keyspace/shard&gt;</code> <code>&lt;tablet alias&gt;</code> This error occurs if the command is not called with exactly 2 arguments.
+* action <code>&lt;PlannedReparentShard&gt;</code> requires -keyspace_shard=<code>&lt;keyspace/shard&gt;</code> [-new_master=<code>&lt;tablet alias&gt;</code>] [-avoid_master=<code>&lt;tablet alias&gt;</code>] This error occurs if the command is not called with exactly 0 arguments.
+* cannot use legacy syntax and flags -<code>&lt;keyspace_shard&gt;</code> and -<code>&lt;new_master&gt;</code> for action <code>&lt;PlannedReparentShard&gt;</code> at the same time
 
 
 ### RemoveBackup
@@ -1460,11 +1581,11 @@ Removes the cell from the shard's Cells list.
 
 ### SetShardServedTypes
 
-Sets a given shard's served tablet types. Does not rebuild any serving graph.
+Add or remove served type to/from a shard. This is meant as an emergency function. It does not rebuild any serving graph i.e. does not run 'RebuildKeyspaceGraph'.
 
 #### Example
 
-<pre class="command-example">SetShardServedTypes &lt;keyspace/shard&gt; [&lt;served tablet type1&gt;,&lt;served tablet type2&gt;,...]</pre>
+<pre class="command-example">SetShardServedTypes [--cells=c1,c2,...] [--remove] &lt;keyspace/shard&gt; &lt;served tablet type&gt;</pre>
 
 #### Flags
 
@@ -1477,7 +1598,7 @@ Sets a given shard's served tablet types. Does not rebuild any serving graph.
 #### Arguments
 
 * <code>&lt;keyspace/shard&gt;</code> &ndash; Required. The name of a sharded database that contains one or more tables as well as the shard associated with the command. The keyspace must be identified by a string that does not contain whitepace, while the shard is typically identified by a string in the format <code>&lt;range start&gt;-&lt;range end&gt;</code>.
-* <code>&lt;served tablet type&gt;</code> &ndash; Optional. The vttablet's role. Valid values are:
+* <code>&lt;served tablet type&gt;</code> &ndash; Required. The vttablet's role. Valid values are:
 
     * <code>backup</code> &ndash; A slaved copy of data that is offline to queries other than for backup purposes
     * <code>batch</code> &ndash; A slaved copy of data for OLAP load patterns (typically for MapReduce jobs)
@@ -1704,6 +1825,7 @@ Blocks until the specified shard has caught up with the filtered replication of 
 * [InitTablet](#inittablet)
 * [Ping](#ping)
 * [RefreshState](#refreshstate)
+* [RefreshStateByShard](#refreshstatebyshard)
 * [ReparentTablet](#reparenttablet)
 * [RestoreFromBackup](#restorefrombackup)
 * [RunHealthCheck](#runhealthcheck)
@@ -1911,7 +2033,6 @@ Initializes a tablet in the topology.<br><br>
 
 | Name | Type | Definition |
 | :-------- | :--------- | :--------- |
-| allow_different_shard | Boolean | Use this flag to force initialization if a tablet with the same name but a different keyspace/shard already exists. Use with caution. |
 | allow_master_override | Boolean | Use this flag to force initialization if a tablet is created as master, and a master for the keyspace/shard already exists. Use with caution. |
 | allow_update | Boolean | Use this flag to force initialization if a tablet with the same name already exists. Use with caution. |
 | db_name_override | string | Overrides the name of the database that the vttablet uses |
@@ -1982,6 +2103,30 @@ Reloads the tablet record on the specified tablet.
 #### Errors
 
 * The <code>&lt;tablet alias&gt;</code> argument is required for the <code>&lt;RefreshState&gt;</code> command. This error occurs if the command is not called with exactly one argument.
+
+
+### RefreshStateByShard
+
+Runs 'RefreshState' on all tablets in the given shard.
+
+#### Example
+
+<pre class="command-example">RefreshStateByShard [-cells=c1,c2,...] &lt;keyspace/shard&gt;</pre>
+
+#### Flags
+
+| Name | Type | Definition |
+| :-------- | :--------- | :--------- |
+| cells | string | Specifies a comma-separated list of cells whose tablets are included. If empty, all cells are considered. |
+
+
+#### Arguments
+
+* <code>&lt;keyspace/shard&gt;</code> &ndash; Required. The name of a sharded database that contains one or more tables as well as the shard associated with the command. The keyspace must be identified by a string that does not contain whitepace, while the shard is typically identified by a string in the format <code>&lt;range start&gt;-&lt;range end&gt;</code>.
+
+#### Errors
+
+* The <code>&lt;keyspace/shard&gt;</code> argument is required for the <code>&lt;RefreshStateByShard&gt;</code> command. This error occurs if the command is not called with exactly one argument.
 
 
 ### ReparentTablet
@@ -2144,5 +2289,113 @@ Updates the IP address and port numbers of a tablet.
 
 * The <code>&lt;tablet alias&gt;</code> argument is required for the <code>&lt;UpdateTabletAddrs&gt;</code> command. This error occurs if the command is not called with exactly one argument.
 * malformed address: %v
+
+
+## Workflows
+
+* [WorkflowAction](#workflowaction)
+* [WorkflowCreate](#workflowcreate)
+* [WorkflowStart](#workflowstart)
+* [WorkflowStop](#workflowstop)
+* [WorkflowTree](#workflowtree)
+* [WorkflowWait](#workflowwait)
+
+### WorkflowAction
+
+Sends the provided action name on the specified path.
+
+#### Example
+
+<pre class="command-example">WorkflowAction &lt;path&gt; &lt;name&gt;</pre>
+
+#### Arguments
+
+* <code>&lt;name&gt;</code> &ndash; Required.
+
+#### Errors
+
+* the <code>&lt;path&gt;</code> and <code>&lt;name&gt;</code> arguments are required for the <code>&lt;WorkflowAction&gt;</code> command This error occurs if the command is not called with exactly 2 arguments.
+* no workflow.Manager registered
+
+
+### WorkflowCreate
+
+Creates the workflow with the provided parameters. The workflow is also started, unless -skip_start is specified.
+
+#### Example
+
+<pre class="command-example">WorkflowCreate [-skip_start] &lt;factoryName&gt; [parameters...]</pre>
+
+#### Flags
+
+| Name | Type | Definition |
+| :-------- | :--------- | :--------- |
+| skip_start | Boolean | If set, the workflow will not be started. |
+
+
+#### Arguments
+
+* <code>&lt;factoryName&gt;</code> &ndash; Required.
+
+#### Errors
+
+* the <code>&lt;factoryName&gt;</code> argument is required for the <code>&lt;WorkflowCreate&gt;</code> command This error occurs if the command is not called with at least one argument.
+* no workflow.Manager registered
+
+
+### WorkflowStart
+
+Starts the workflow.
+
+#### Example
+
+<pre class="command-example">WorkflowStart &lt;uuid&gt;</pre>
+
+#### Errors
+
+* the <code>&lt;uuid&gt;</code> argument is required for the <code>&lt;WorkflowStart&gt;</code> command This error occurs if the command is not called with exactly one argument.
+* no workflow.Manager registered
+
+
+### WorkflowStop
+
+Stops the workflow.
+
+#### Example
+
+<pre class="command-example">WorkflowStop &lt;uuid&gt;</pre>
+
+#### Errors
+
+* the <code>&lt;uuid&gt;</code> argument is required for the <code>&lt;WorkflowStop&gt;</code> command This error occurs if the command is not called with exactly one argument.
+* no workflow.Manager registered
+
+
+### WorkflowTree
+
+Displays a JSON representation of the workflow tree.
+
+#### Example
+
+<pre class="command-example">WorkflowTree </pre>
+
+#### Errors
+
+* the <code>&lt;WorkflowTree&gt;</code> command takes no parameter This error occurs if the command is not called with exactly 0 arguments.
+* no workflow.Manager registered
+
+
+### WorkflowWait
+
+Waits for the workflow to finish.
+
+#### Example
+
+<pre class="command-example">WorkflowWait &lt;uuid&gt;</pre>
+
+#### Errors
+
+* the <code>&lt;uuid&gt;</code> argument is required for the <code>&lt;WorkflowWait&gt;</code> command This error occurs if the command is not called with exactly one argument.
+* no workflow.Manager registered
 
 

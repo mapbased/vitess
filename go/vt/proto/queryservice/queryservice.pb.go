@@ -39,7 +39,7 @@ var _ grpc.ClientConn
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion3
+const _ = grpc.SupportPackageIsVersion4
 
 // Client API for Query service
 
@@ -61,6 +61,22 @@ type QueryClient interface {
 	Commit(ctx context.Context, in *query.CommitRequest, opts ...grpc.CallOption) (*query.CommitResponse, error)
 	// Rollback a transaction.
 	Rollback(ctx context.Context, in *query.RollbackRequest, opts ...grpc.CallOption) (*query.RollbackResponse, error)
+	// Prepare preares a transaction.
+	Prepare(ctx context.Context, in *query.PrepareRequest, opts ...grpc.CallOption) (*query.PrepareResponse, error)
+	// CommitPrepared commits a prepared transaction.
+	CommitPrepared(ctx context.Context, in *query.CommitPreparedRequest, opts ...grpc.CallOption) (*query.CommitPreparedResponse, error)
+	// RollbackPrepared rolls back a prepared transaction.
+	RollbackPrepared(ctx context.Context, in *query.RollbackPreparedRequest, opts ...grpc.CallOption) (*query.RollbackPreparedResponse, error)
+	// CreateTransaction creates the metadata for a 2pc transaction.
+	CreateTransaction(ctx context.Context, in *query.CreateTransactionRequest, opts ...grpc.CallOption) (*query.CreateTransactionResponse, error)
+	// StartCommit initiates a commit for a 2pc transaction.
+	StartCommit(ctx context.Context, in *query.StartCommitRequest, opts ...grpc.CallOption) (*query.StartCommitResponse, error)
+	// SetRollback marks the 2pc transaction for rollback.
+	SetRollback(ctx context.Context, in *query.SetRollbackRequest, opts ...grpc.CallOption) (*query.SetRollbackResponse, error)
+	// ConcludeTransaction marks the 2pc transaction as resolved.
+	ConcludeTransaction(ctx context.Context, in *query.ConcludeTransactionRequest, opts ...grpc.CallOption) (*query.ConcludeTransactionResponse, error)
+	// ReadTransaction returns the 2pc transaction info.
+	ReadTransaction(ctx context.Context, in *query.ReadTransactionRequest, opts ...grpc.CallOption) (*query.ReadTransactionResponse, error)
 	// BeginExecute executes a begin and the specified SQL query.
 	BeginExecute(ctx context.Context, in *query.BeginExecuteRequest, opts ...grpc.CallOption) (*query.BeginExecuteResponse, error)
 	// BeginExecuteBatch executes a begin and a list of queries.
@@ -71,6 +87,8 @@ type QueryClient interface {
 	// StreamHealth runs a streaming RPC to the tablet, that returns the
 	// current health of the tablet on a regular basis.
 	StreamHealth(ctx context.Context, in *query.StreamHealthRequest, opts ...grpc.CallOption) (Query_StreamHealthClient, error)
+	// UpdateStream asks the server to return a stream of the updates that have been applied to its database.
+	UpdateStream(ctx context.Context, in *query.UpdateStreamRequest, opts ...grpc.CallOption) (Query_UpdateStreamClient, error)
 }
 
 type queryClient struct {
@@ -158,6 +176,78 @@ func (c *queryClient) Rollback(ctx context.Context, in *query.RollbackRequest, o
 	return out, nil
 }
 
+func (c *queryClient) Prepare(ctx context.Context, in *query.PrepareRequest, opts ...grpc.CallOption) (*query.PrepareResponse, error) {
+	out := new(query.PrepareResponse)
+	err := grpc.Invoke(ctx, "/queryservice.Query/Prepare", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) CommitPrepared(ctx context.Context, in *query.CommitPreparedRequest, opts ...grpc.CallOption) (*query.CommitPreparedResponse, error) {
+	out := new(query.CommitPreparedResponse)
+	err := grpc.Invoke(ctx, "/queryservice.Query/CommitPrepared", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) RollbackPrepared(ctx context.Context, in *query.RollbackPreparedRequest, opts ...grpc.CallOption) (*query.RollbackPreparedResponse, error) {
+	out := new(query.RollbackPreparedResponse)
+	err := grpc.Invoke(ctx, "/queryservice.Query/RollbackPrepared", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) CreateTransaction(ctx context.Context, in *query.CreateTransactionRequest, opts ...grpc.CallOption) (*query.CreateTransactionResponse, error) {
+	out := new(query.CreateTransactionResponse)
+	err := grpc.Invoke(ctx, "/queryservice.Query/CreateTransaction", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) StartCommit(ctx context.Context, in *query.StartCommitRequest, opts ...grpc.CallOption) (*query.StartCommitResponse, error) {
+	out := new(query.StartCommitResponse)
+	err := grpc.Invoke(ctx, "/queryservice.Query/StartCommit", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) SetRollback(ctx context.Context, in *query.SetRollbackRequest, opts ...grpc.CallOption) (*query.SetRollbackResponse, error) {
+	out := new(query.SetRollbackResponse)
+	err := grpc.Invoke(ctx, "/queryservice.Query/SetRollback", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ConcludeTransaction(ctx context.Context, in *query.ConcludeTransactionRequest, opts ...grpc.CallOption) (*query.ConcludeTransactionResponse, error) {
+	out := new(query.ConcludeTransactionResponse)
+	err := grpc.Invoke(ctx, "/queryservice.Query/ConcludeTransaction", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ReadTransaction(ctx context.Context, in *query.ReadTransactionRequest, opts ...grpc.CallOption) (*query.ReadTransactionResponse, error) {
+	out := new(query.ReadTransactionResponse)
+	err := grpc.Invoke(ctx, "/queryservice.Query/ReadTransaction", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *queryClient) BeginExecute(ctx context.Context, in *query.BeginExecuteRequest, opts ...grpc.CallOption) (*query.BeginExecuteResponse, error) {
 	out := new(query.BeginExecuteResponse)
 	err := grpc.Invoke(ctx, "/queryservice.Query/BeginExecute", in, out, c.cc, opts...)
@@ -217,6 +307,38 @@ func (x *queryStreamHealthClient) Recv() (*query.StreamHealthResponse, error) {
 	return m, nil
 }
 
+func (c *queryClient) UpdateStream(ctx context.Context, in *query.UpdateStreamRequest, opts ...grpc.CallOption) (Query_UpdateStreamClient, error) {
+	stream, err := grpc.NewClientStream(ctx, &_Query_serviceDesc.Streams[2], c.cc, "/queryservice.Query/UpdateStream", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &queryUpdateStreamClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Query_UpdateStreamClient interface {
+	Recv() (*query.UpdateStreamResponse, error)
+	grpc.ClientStream
+}
+
+type queryUpdateStreamClient struct {
+	grpc.ClientStream
+}
+
+func (x *queryUpdateStreamClient) Recv() (*query.UpdateStreamResponse, error) {
+	m := new(query.UpdateStreamResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // Server API for Query service
 
 type QueryServer interface {
@@ -237,6 +359,22 @@ type QueryServer interface {
 	Commit(context.Context, *query.CommitRequest) (*query.CommitResponse, error)
 	// Rollback a transaction.
 	Rollback(context.Context, *query.RollbackRequest) (*query.RollbackResponse, error)
+	// Prepare preares a transaction.
+	Prepare(context.Context, *query.PrepareRequest) (*query.PrepareResponse, error)
+	// CommitPrepared commits a prepared transaction.
+	CommitPrepared(context.Context, *query.CommitPreparedRequest) (*query.CommitPreparedResponse, error)
+	// RollbackPrepared rolls back a prepared transaction.
+	RollbackPrepared(context.Context, *query.RollbackPreparedRequest) (*query.RollbackPreparedResponse, error)
+	// CreateTransaction creates the metadata for a 2pc transaction.
+	CreateTransaction(context.Context, *query.CreateTransactionRequest) (*query.CreateTransactionResponse, error)
+	// StartCommit initiates a commit for a 2pc transaction.
+	StartCommit(context.Context, *query.StartCommitRequest) (*query.StartCommitResponse, error)
+	// SetRollback marks the 2pc transaction for rollback.
+	SetRollback(context.Context, *query.SetRollbackRequest) (*query.SetRollbackResponse, error)
+	// ConcludeTransaction marks the 2pc transaction as resolved.
+	ConcludeTransaction(context.Context, *query.ConcludeTransactionRequest) (*query.ConcludeTransactionResponse, error)
+	// ReadTransaction returns the 2pc transaction info.
+	ReadTransaction(context.Context, *query.ReadTransactionRequest) (*query.ReadTransactionResponse, error)
 	// BeginExecute executes a begin and the specified SQL query.
 	BeginExecute(context.Context, *query.BeginExecuteRequest) (*query.BeginExecuteResponse, error)
 	// BeginExecuteBatch executes a begin and a list of queries.
@@ -247,6 +385,8 @@ type QueryServer interface {
 	// StreamHealth runs a streaming RPC to the tablet, that returns the
 	// current health of the tablet on a regular basis.
 	StreamHealth(*query.StreamHealthRequest, Query_StreamHealthServer) error
+	// UpdateStream asks the server to return a stream of the updates that have been applied to its database.
+	UpdateStream(*query.UpdateStreamRequest, Query_UpdateStreamServer) error
 }
 
 func RegisterQueryServer(s *grpc.Server, srv QueryServer) {
@@ -364,6 +504,150 @@ func _Query_Rollback_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_Prepare_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(query.PrepareRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).Prepare(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/queryservice.Query/Prepare",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).Prepare(ctx, req.(*query.PrepareRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_CommitPrepared_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(query.CommitPreparedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).CommitPrepared(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/queryservice.Query/CommitPrepared",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).CommitPrepared(ctx, req.(*query.CommitPreparedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_RollbackPrepared_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(query.RollbackPreparedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).RollbackPrepared(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/queryservice.Query/RollbackPrepared",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).RollbackPrepared(ctx, req.(*query.RollbackPreparedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_CreateTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(query.CreateTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).CreateTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/queryservice.Query/CreateTransaction",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).CreateTransaction(ctx, req.(*query.CreateTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_StartCommit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(query.StartCommitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).StartCommit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/queryservice.Query/StartCommit",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).StartCommit(ctx, req.(*query.StartCommitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_SetRollback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(query.SetRollbackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).SetRollback(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/queryservice.Query/SetRollback",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).SetRollback(ctx, req.(*query.SetRollbackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ConcludeTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(query.ConcludeTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ConcludeTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/queryservice.Query/ConcludeTransaction",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ConcludeTransaction(ctx, req.(*query.ConcludeTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ReadTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(query.ReadTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ReadTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/queryservice.Query/ReadTransaction",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ReadTransaction(ctx, req.(*query.ReadTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Query_BeginExecute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(query.BeginExecuteRequest)
 	if err := dec(in); err != nil {
@@ -439,6 +723,27 @@ func (x *queryStreamHealthServer) Send(m *query.StreamHealthResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Query_UpdateStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(query.UpdateStreamRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(QueryServer).UpdateStream(m, &queryUpdateStreamServer{stream})
+}
+
+type Query_UpdateStreamServer interface {
+	Send(*query.UpdateStreamResponse) error
+	grpc.ServerStream
+}
+
+type queryUpdateStreamServer struct {
+	grpc.ServerStream
+}
+
+func (x *queryUpdateStreamServer) Send(m *query.UpdateStreamResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 var _Query_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "queryservice.Query",
 	HandlerType: (*QueryServer)(nil),
@@ -464,6 +769,38 @@ var _Query_serviceDesc = grpc.ServiceDesc{
 			Handler:    _Query_Rollback_Handler,
 		},
 		{
+			MethodName: "Prepare",
+			Handler:    _Query_Prepare_Handler,
+		},
+		{
+			MethodName: "CommitPrepared",
+			Handler:    _Query_CommitPrepared_Handler,
+		},
+		{
+			MethodName: "RollbackPrepared",
+			Handler:    _Query_RollbackPrepared_Handler,
+		},
+		{
+			MethodName: "CreateTransaction",
+			Handler:    _Query_CreateTransaction_Handler,
+		},
+		{
+			MethodName: "StartCommit",
+			Handler:    _Query_StartCommit_Handler,
+		},
+		{
+			MethodName: "SetRollback",
+			Handler:    _Query_SetRollback_Handler,
+		},
+		{
+			MethodName: "ConcludeTransaction",
+			Handler:    _Query_ConcludeTransaction_Handler,
+		},
+		{
+			MethodName: "ReadTransaction",
+			Handler:    _Query_ReadTransaction_Handler,
+		},
+		{
 			MethodName: "BeginExecute",
 			Handler:    _Query_BeginExecute_Handler,
 		},
@@ -487,31 +824,46 @@ var _Query_serviceDesc = grpc.ServiceDesc{
 			Handler:       _Query_StreamHealth_Handler,
 			ServerStreams: true,
 		},
+		{
+			StreamName:    "UpdateStream",
+			Handler:       _Query_UpdateStream_Handler,
+			ServerStreams: true,
+		},
 	},
-	Metadata: fileDescriptor0,
+	Metadata: "queryservice.proto",
 }
 
 func init() { proto.RegisterFile("queryservice.proto", fileDescriptor0) }
 
 var fileDescriptor0 = []byte{
-	// 294 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x74, 0x92, 0xcf, 0x4a, 0xc3, 0x40,
-	0x10, 0xc6, 0xf5, 0x90, 0x2a, 0x63, 0x3c, 0x38, 0x5a, 0xff, 0xa4, 0x82, 0xe2, 0x03, 0x14, 0x51,
-	0x41, 0x10, 0xbc, 0xb4, 0x08, 0x8a, 0x20, 0xd8, 0x5e, 0xbc, 0xa6, 0x61, 0xd0, 0x60, 0xd2, 0x4d,
-	0x93, 0x8d, 0xe8, 0xf3, 0xf9, 0x62, 0xe2, 0x6e, 0x66, 0xb3, 0xbb, 0xae, 0xc7, 0xf9, 0x7d, 0xdf,
-	0x7c, 0xcc, 0xee, 0x0c, 0xe0, 0xaa, 0xa5, 0xfa, 0xab, 0xa1, 0xfa, 0x23, 0xcf, 0x68, 0x5c, 0xd5,
-	0x42, 0x0a, 0x8c, 0x6d, 0x96, 0x6c, 0xa9, 0x4a, 0x4b, 0x17, 0xdf, 0x11, 0x44, 0xcf, 0xbf, 0x35,
-	0xde, 0xc0, 0xc6, 0xdd, 0x27, 0x65, 0xad, 0x24, 0x1c, 0x8e, 0xb5, 0xa5, 0xab, 0x67, 0xb4, 0x6a,
-	0xa9, 0x91, 0xc9, 0xbe, 0x8f, 0x9b, 0x4a, 0x2c, 0x1b, 0x3a, 0x5b, 0xc3, 0x07, 0x88, 0x3b, 0x38,
-	0x49, 0x65, 0xf6, 0x86, 0x89, 0xeb, 0x54, 0x90, 0x53, 0x46, 0x41, 0xcd, 0x44, 0x3d, 0xc1, 0xf6,
-	0x5c, 0xd6, 0x94, 0x96, 0x3c, 0x0c, 0xfb, 0x1d, 0xca, 0x61, 0xc7, 0x61, 0x91, 0xd3, 0xce, 0xd7,
-	0xf1, 0x0a, 0xa2, 0x09, 0xbd, 0xe6, 0x4b, 0xdc, 0xed, 0xac, 0xaa, 0xe2, 0xfe, 0x3d, 0x17, 0x9a,
-	0x29, 0xae, 0x61, 0x30, 0x15, 0x65, 0x99, 0x4b, 0x64, 0x87, 0x2e, 0xb9, 0x6f, 0xe8, 0x51, 0xd3,
-	0x78, 0x0b, 0x9b, 0x33, 0x51, 0x14, 0x8b, 0x34, 0x7b, 0x47, 0xfe, 0x2f, 0x06, 0xdc, 0x7c, 0xf0,
-	0x87, 0xdb, 0x1f, 0xa9, 0x46, 0xe1, 0xc7, 0x27, 0xf6, 0x7c, 0xde, 0xdb, 0x47, 0x41, 0xcd, 0x44,
-	0xbd, 0xc0, 0x8e, 0xad, 0xe8, 0xc5, 0x9c, 0x04, 0x7a, 0x9c, 0xed, 0x9c, 0xfe, 0x6f, 0x30, 0xc9,
-	0x53, 0x80, 0x79, 0x55, 0xe4, 0x52, 0xdf, 0xcd, 0x21, 0xaf, 0xc0, 0x20, 0xce, 0x3a, 0x0a, 0x28,
-	0x26, 0xe4, 0x11, 0x62, 0xbd, 0xb4, 0x7b, 0x4a, 0x0b, 0xd9, 0x9f, 0x8c, 0x0d, 0xfd, 0x97, 0xba,
-	0x5a, 0xbf, 0xe4, 0xc5, 0x40, 0x1d, 0xf3, 0xe5, 0x4f, 0x00, 0x00, 0x00, 0xff, 0xff, 0xc1, 0xe2,
-	0xe9, 0x0d, 0xfd, 0x02, 0x00, 0x00,
+	// 458 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x7c, 0x94, 0x6d, 0x6b, 0xd4, 0x40,
+	0x10, 0xc7, 0xf5, 0x45, 0x5b, 0x99, 0x8b, 0x4f, 0x5b, 0xab, 0x36, 0xad, 0x6d, 0xed, 0x07, 0x28,
+	0xa2, 0x82, 0x70, 0xe0, 0x9b, 0x0b, 0x8a, 0x72, 0xe0, 0x43, 0xce, 0x03, 0x5f, 0x09, 0x7b, 0xc9,
+	0xa0, 0xc1, 0x5c, 0x92, 0xdb, 0x6c, 0x44, 0xbf, 0x86, 0x9f, 0x58, 0xcc, 0x66, 0x26, 0xbb, 0x9b,
+	0xa4, 0x2f, 0xe7, 0xff, 0x9f, 0xf9, 0x31, 0xd9, 0xc9, 0x0c, 0x88, 0x5d, 0x83, 0xea, 0x4f, 0x8d,
+	0xea, 0x57, 0x96, 0xe0, 0x55, 0xa5, 0x4a, 0x5d, 0x8a, 0xc0, 0xd6, 0xc2, 0x59, 0x1b, 0x19, 0xeb,
+	0xf9, 0xdf, 0x19, 0xec, 0x7d, 0xfe, 0x1f, 0x8b, 0x39, 0x1c, 0xbc, 0xf9, 0x8d, 0x49, 0xa3, 0x51,
+	0x1c, 0x5d, 0x99, 0x94, 0x2e, 0x8e, 0x71, 0xd7, 0x60, 0xad, 0xc3, 0x87, 0xbe, 0x5c, 0x57, 0x65,
+	0x51, 0xe3, 0xe5, 0x0d, 0xf1, 0x1e, 0x82, 0x4e, 0x5c, 0x48, 0x9d, 0xfc, 0x10, 0xa1, 0x9b, 0xd9,
+	0x8a, 0x44, 0x39, 0x19, 0xf5, 0x18, 0xf5, 0x01, 0x6e, 0xaf, 0xb4, 0x42, 0xb9, 0xa5, 0x66, 0x28,
+	0xdf, 0x51, 0x09, 0x76, 0x3a, 0x6e, 0x12, 0xed, 0xd9, 0x4d, 0xf1, 0x12, 0xf6, 0x16, 0xf8, 0x3d,
+	0x2b, 0xc4, 0x61, 0x97, 0xda, 0x46, 0x54, 0xff, 0xc0, 0x15, 0xb9, 0x8b, 0x57, 0xb0, 0x1f, 0x95,
+	0xdb, 0x6d, 0xa6, 0x05, 0x65, 0x98, 0x90, 0xea, 0x8e, 0x3c, 0x95, 0x0b, 0x5f, 0xc3, 0xad, 0xb8,
+	0xcc, 0xf3, 0x8d, 0x4c, 0x7e, 0x0a, 0x7a, 0x2f, 0x12, 0xa8, 0xf8, 0xd1, 0x40, 0xe7, 0xf2, 0x39,
+	0x1c, 0x7c, 0x52, 0x58, 0x49, 0xd5, 0x0f, 0xa1, 0x8b, 0xfd, 0x21, 0xb0, 0xcc, 0xb5, 0x1f, 0xe1,
+	0x8e, 0x69, 0xa7, 0xb3, 0x52, 0x71, 0xea, 0x74, 0x49, 0x32, 0x91, 0x9e, 0x4c, 0xb8, 0x0c, 0x5c,
+	0xc3, 0x3d, 0x6a, 0x91, 0x91, 0x67, 0x5e, 0xef, 0x3e, 0xf4, 0x7c, 0xd2, 0x67, 0xec, 0x57, 0xb8,
+	0x1f, 0x29, 0x94, 0x1a, 0xbf, 0x28, 0x59, 0xd4, 0x32, 0xd1, 0x59, 0x59, 0x08, 0xaa, 0x1b, 0x38,
+	0x04, 0xbe, 0x98, 0x4e, 0x60, 0xf2, 0x5b, 0x98, 0xad, 0xb4, 0x54, 0xba, 0x1b, 0xdd, 0x31, 0xff,
+	0x1c, 0xac, 0x11, 0x2d, 0x1c, 0xb3, 0x1c, 0x0e, 0x6a, 0x9e, 0x23, 0x73, 0x7a, 0x6d, 0xc0, 0xb1,
+	0x2d, 0xe6, 0x7c, 0x83, 0xc3, 0xa8, 0x2c, 0x92, 0xbc, 0x49, 0x9d, 0x6f, 0x7d, 0xca, 0x0f, 0x3f,
+	0xf0, 0x88, 0x7b, 0x79, 0x5d, 0x0a, 0xf3, 0x63, 0xb8, 0x1b, 0xa3, 0x4c, 0x6d, 0x36, 0x0d, 0xd5,
+	0xd3, 0x89, 0x7b, 0x36, 0x65, 0xdb, 0xab, 0xdc, 0x2e, 0x03, 0xad, 0x5f, 0x68, 0x6f, 0x88, 0xb7,
+	0x7d, 0x27, 0xa3, 0x9e, 0x3d, 0x68, 0xdb, 0x31, 0xa7, 0xe1, 0x7c, 0xa4, 0xc6, 0xb9, 0x0f, 0x17,
+	0xd3, 0x09, 0x4c, 0x8e, 0x00, 0x56, 0x55, 0x9e, 0x69, 0x73, 0xb9, 0x1e, 0xd3, 0x10, 0x58, 0x22,
+	0xd6, 0xf1, 0x88, 0xc3, 0x90, 0x25, 0x04, 0xe6, 0x6c, 0xbc, 0x43, 0x99, 0xeb, 0xfe, 0x68, 0xd9,
+	0xa2, 0xff, 0xa5, 0xae, 0x67, 0x9d, 0x99, 0x25, 0x04, 0xeb, 0x2a, 0x95, 0x1a, 0x4d, 0x06, 0xc3,
+	0x6c, 0xd1, 0x87, 0xb9, 0x5e, 0x0f, 0xdb, 0xec, 0xb7, 0xb7, 0xf9, 0xc5, 0xbf, 0x00, 0x00, 0x00,
+	0xff, 0xff, 0x96, 0xd6, 0x0c, 0xeb, 0xcc, 0x05, 0x00, 0x00,
 }

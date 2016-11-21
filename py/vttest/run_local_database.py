@@ -34,6 +34,8 @@ import optparse
 import os
 import sys
 
+from vtdb import prefer_vtroot_imports  # pylint: disable=unused-import
+
 from google.protobuf import text_format
 
 from vttest import environment
@@ -88,6 +90,7 @@ def main(cmdline_options):
       cmdline_options.mysql_only,
       init_data_opts,
       web_dir=cmdline_options.web_dir,
+      web_dir2=cmdline_options.web_dir2,
       default_schema_dir=cmdline_options.default_schema_dir,
       extra_my_cnf=os.path.join(
           os.environ['VTTOP'], 'config/mycnf/vtcombo.cnf')) as local_db:
@@ -161,6 +164,9 @@ if __name__ == '__main__':
   parser.add_option(
       '-w', '--web_dir',
       help='location of the vtctld web server files.')
+  parser.add_option(
+      '--web_dir2',
+      help='location of the vtctld2 web server files.')
   parser.add_option(
       '-v', '--verbose', action='store_true',
       help='Display extra error messages.')

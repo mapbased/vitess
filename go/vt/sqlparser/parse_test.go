@@ -11,6 +11,9 @@ func TestValid(t *testing.T) {
 		input  string
 		output string
 	}{{
+		input:  "select 1",
+		output: "select 1 from dual",
+	}, {
 		input: "select 1 from t",
 	}, {
 		input: "select .1 from t",
@@ -32,6 +35,9 @@ func TestValid(t *testing.T) {
 		output: "select 1 from t",
 	}, {
 		input:  "select 1 from t -- aa",
+		output: "select 1 from t",
+	}, {
+		input:  "select 1 --aa\nfrom t",
 		output: "select 1 from t",
 	}, {
 		input: "select /* simplest */ 1 from t",
@@ -85,9 +91,14 @@ func TestValid(t *testing.T) {
 		input: "select /* a.* */ a.* from t",
 	}, {
 		input:  "select next value for t",
-		output: "select next value from t",
+		output: "select next 1 values from t",
 	}, {
-		input: "select next value from t",
+		input:  "select next value from t",
+		output: "select next 1 values from t",
+	}, {
+		input: "select next 10 values from t",
+	}, {
+		input: "select next :a values from t",
 	}, {
 		input: "select /* `By`.* */ `By`.* from t",
 	}, {
@@ -295,9 +306,17 @@ func TestValid(t *testing.T) {
 	}, {
 		input: "select /* function with many params */ 1 from t where a = b(c, d)",
 	}, {
+		input: "select /* function with distinct */ count(distinct a) from t",
+	}, {
 		input: "select /* if as func */ 1 from t where a = if(b)",
 	}, {
-		input: "select /* function with distinct */ count(distinct a) from t",
+		input: "select /* current_timestamp as func */ current_timestamp() from t",
+	}, {
+		input: "select /* mod as func */ a from tab where mod(b, 2) = 0",
+	}, {
+		input: "select /* database as func no param */ database() from t",
+	}, {
+		input: "select /* database as func 1 param */ database(1) from t",
 	}, {
 		input: "select /* a */ a from t",
 	}, {
@@ -352,9 +371,12 @@ func TestValid(t *testing.T) {
 	}, {
 		input: "select /* octal */ 010 from t",
 	}, {
-		input: "select /* hex */ 0xf0 from t",
+		input:  "select /* hex */ x'f0A1' from t",
+		output: "select /* hex */ X'f0A1' from t",
 	}, {
-		input: "select /* hex caps */ 0xF0 from t",
+		input: "select /* hex caps */ X'F0a1' from t",
+	}, {
+		input: "select /* 0x */ 0xf0 from t",
 	}, {
 		input: "select /* float */ 0.1 from t",
 	}, {
@@ -638,7 +660,7 @@ func TestCaseSensitivity(t *testing.T) {
 		output: "select /* lock in SHARE MODE */ 1 from t lock in share mode",
 	}, {
 		input:  "select next VALUE from t",
-		output: "select next value from t",
+		output: "select next 1 values from t",
 	}, {
 		input: "select /* use */ 1 from t1 use index (A) where b = 1",
 	}}
@@ -672,8 +694,14 @@ func TestErrors(t *testing.T) {
 		input:  "select : from t",
 		output: "syntax error at position 9 near ':'",
 	}, {
-		input:  "select 078 from t",
-		output: "syntax error at position 11 near '078'",
+		input:  "select 0xH from t",
+		output: "syntax error at position 10 near '0x'",
+	}, {
+		input:  "select x'78 from t",
+		output: "syntax error at position 12 near '78'",
+	}, {
+		input:  "select x'777' from t",
+		output: "syntax error at position 14 near '777'",
 	}, {
 		input:  "select `1a` from t",
 		output: "syntax error at position 9 near '1'",
@@ -742,7 +770,10 @@ func TestErrors(t *testing.T) {
 		output: "syntax error at position 34 near 'on'",
 	}, {
 		input:  "select next id from a",
-		output: "expecting value after next at position 23",
+		output: "expecting value after next at position 15 near 'id'",
+	}, {
+		input:  "select next 1+1 values from a",
+		output: "syntax error at position 15",
 	}}
 	for _, tcase := range invalidSQL {
 		if tcase.output == "" {
